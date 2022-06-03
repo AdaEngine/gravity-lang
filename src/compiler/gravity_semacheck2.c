@@ -10,7 +10,7 @@
 #include "gravity_semacheck2.h"
 #include "gravity_compiler.h"
 #include "gravity_visitor.h"
-#include "gravity_core.h"
+#include "../runtime/gravity_core.h"
 
 struct semacheck_t {
     gnode_r         *declarations;      // declarations stack

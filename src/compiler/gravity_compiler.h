@@ -9,10 +9,10 @@
 #ifndef __GRAVITY_COMPILER__
 #define __GRAVITY_COMPILER__
 
-#include "gravity_delegate.h"
+#include "../shared/gravity_delegate.h"
 #include "debug_macros.h"
-#include "gravity_utils.h"
-#include "gravity_value.h"
+#include "../utils/gravity_utils.h"
+#include "../shared/gravity_value.h"
 #include "gravity_ast.h"
 
 #ifdef __cplusplus

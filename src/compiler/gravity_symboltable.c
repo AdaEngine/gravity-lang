@@ -7,9 +7,9 @@
 //
 
 #include "gravity_symboltable.h"
-#include "gravity_macros.h"
-#include "gravity_array.h"
-#include "gravity_hash.h"
+#include "../shared/gravity_macros.h"
+#include "../shared/gravity_array.h"
+#include "../shared/gravity_hash.h"
 
 // symbol table implementation using a stack of hash tables
 typedef marray_t(gravity_hash_t*)       ghash_r;

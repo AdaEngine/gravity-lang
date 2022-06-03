@@ -9,14 +9,14 @@
 #include "gravity_compiler.h"
 #include "gravity_parser.h"
 #include "gravity_token.h"
-#include "gravity_utils.h"
+#include "../utils/gravity_utils.h"
 #include "gravity_semacheck1.h"
 #include "gravity_semacheck2.h"
 #include "gravity_optimizer.h"
 #include "gravity_codegen.h"
-#include "gravity_array.h"
-#include "gravity_hash.h"
-#include "gravity_core.h"
+#include "../shared/gravity_array.h"
+#include "../shared/gravity_hash.h"
+#include "../runtime/gravity_core.h"
 
 struct gravity_compiler_t {
     gravity_parser_t        *parser;

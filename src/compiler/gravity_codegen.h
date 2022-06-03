@@ -10,8 +10,8 @@
 #define __GRAVITY_CODEGEN__
 
 #include "gravity_ast.h"
-#include "gravity_value.h"
-#include "gravity_delegate.h"
+#include "../shared/gravity_value.h"
+#include "../shared/gravity_delegate.h"
 
 gravity_function_t *gravity_codegen(gnode_t *node, gravity_delegate_t *delegate, gravity_vm *vm, bool add_debug);
 

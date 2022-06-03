@@ -7,14 +7,14 @@
 //
 
 #include <inttypes.h>
-#include "gravity_vm.h"
-#include "gravity_core.h"
-#include "gravity_hash.h"
-#include "gravity_json.h"
-#include "gravity_utils.h"
-#include "gravity_macros.h"
-#include "gravity_opcodes.h"
-#include "gravity_vmmacros.h"
+#include "../runtime/gravity_vm.h"
+#include "../runtime/gravity_core.h"
+#include "../shared/gravity_hash.h"
+#include "../utils/gravity_json.h"
+#include "../utils/gravity_utils.h"
+#include "../shared/gravity_macros.h"
+#include "../shared/gravity_opcodes.h"
+#include "../runtime/gravity_vmmacros.h"
 #include "gravity_opt_json.h"
 
 #define GRAVITY_JSON_STRINGIFY_NAME     "stringify"

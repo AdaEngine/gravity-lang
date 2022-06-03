@@ -7,8 +7,8 @@
 //
 
 #include "gravity_ircode.h"
-#include "gravity_value.h"
-#include "gravity_debug.h"
+#include "../shared/gravity_value.h"
+#include "../utils/gravity_debug.h"
 #include <inttypes.h>
 
 typedef marray_t(inst_t *)      code_r;

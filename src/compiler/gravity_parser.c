@@ -7,15 +7,15 @@
 //
 
 #include "gravity_symboltable.h"
-#include "gravity_optionals.h"
+#include "../optionals/gravity_optionals.h"
 #include "gravity_parser.h"
-#include "gravity_macros.h"
+#include "../shared/gravity_macros.h"
 #include "gravity_lexer.h"
 #include "gravity_token.h"
-#include "gravity_utils.h"
-#include "gravity_array.h"
-#include "gravity_hash.h"
-#include "gravity_core.h"
+#include "../utils/gravity_utils.h"
+#include "../shared/gravity_array.h"
+#include "../shared/gravity_hash.h"
+#include "../runtime/gravity_core.h"
 #include "gravity_ast.h"
 
 typedef marray_t(gravity_lexer_t*)      lexer_r;

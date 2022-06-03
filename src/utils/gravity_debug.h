@@ -9,7 +9,7 @@
 #ifndef __GRAVITY_DEBUG__
 #define __GRAVITY_DEBUG__
 
-#include "gravity_opcodes.h"
+#include "../shared/gravity_opcodes.h"
 
 const char *opcode_constname (int n);
 const char *opcode_name (opcode_t op);

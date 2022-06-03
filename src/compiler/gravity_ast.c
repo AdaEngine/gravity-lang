@@ -8,8 +8,8 @@
 
 #include <inttypes.h>
 #include "gravity_ast.h"
-#include "gravity_hash.h"
-#include "gravity_utils.h"
+#include "../shared/gravity_hash.h"
+#include "../utils/gravity_utils.h"
 #include "gravity_visitor.h"
 #include "gravity_symboltable.h"
 

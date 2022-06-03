@@ -6,17 +6,17 @@
 //  Copyright (c) 2014 CreoLabs. All rights reserved.
 //
 
-#include "gravity_hash.h"
-#include "gravity_json.h"
-#include "gravity_array.h"
-#include "gravity_debug.h"
-#include "gravity_macros.h"
-#include "gravity_vm.h"
-#include "gravity_core.h"
-#include "gravity_opcodes.h"
-#include "gravity_memory.h"
-#include "gravity_vmmacros.h"
-#include "gravity_optionals.h"
+#include "../shared/gravity_hash.h"
+#include "../utils/gravity_json.h"
+#include "../shared/gravity_array.h"
+#include "../utils/gravity_debug.h"
+#include "../shared/gravity_macros.h"
+#include "../runtime/gravity_vm.h"
+#include "../runtime/gravity_core.h"
+#include "../shared/gravity_opcodes.h"
+#include "../shared/gravity_memory.h"
+#include "../runtime/gravity_vmmacros.h"
+#include "../optionals/gravity_optionals.h"
 
 // MARK: Internals -
 static void gravity_gc_cleanup (gravity_vm *vm);

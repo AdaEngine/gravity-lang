@@ -11,9 +11,9 @@
 #include "gravity_optimizer.h"
 #include "gravity_visitor.h"
 #include "gravity_ircode.h"
-#include "gravity_utils.h"
-#include "gravity_array.h"
-#include "gravity_hash.h"
+#include "../utils/gravity_utils.h"
+#include "../shared/gravity_array.h"
+#include "../shared/gravity_hash.h"
 
 typedef marray_t(gnode_class_decl_t *)  gnode_class_r;
 struct codegen_t {

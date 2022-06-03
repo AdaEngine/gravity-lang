@@ -11,13 +11,13 @@
 #include <time.h>
 #include <stdlib.h>
 #include "gravity_core.h"
-#include "gravity_hash.h"
-#include "gravity_value.h"
-#include "gravity_debug.h"
-#include "gravity_opcodes.h"
-#include "gravity_macros.h"
-#include "gravity_memory.h"
-#include "gravity_vmmacros.h"
+#include "../shared/gravity_hash.h"
+#include "../shared/gravity_value.h"
+#include "../utils/gravity_debug.h"
+#include "../shared/gravity_opcodes.h"
+#include "../shared/gravity_macros.h"
+#include "../shared/gravity_memory.h"
+#include "../runtime/gravity_vmmacros.h"
 
 // Gravity base classes (the isa pointer in each object).
 // Null and Undefined points to same class (Null) and they

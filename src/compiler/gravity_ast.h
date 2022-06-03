@@ -10,7 +10,7 @@
 #define __GRAVITY_AST__
 
 #include "debug_macros.h"
-#include "gravity_array.h"
+#include "../shared/gravity_array.h"
 #include "gravity_token.h"
 
 /*

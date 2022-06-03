@@ -24,8 +24,8 @@
 // the time of method execution.
 
 #include "debug_macros.h"
-#include "gravity_opcodes.h"
-#include "gravity_array.h"
+#include "../shared/gravity_opcodes.h"
+#include "../shared/gravity_array.h"
 
 #define REGISTER_ERROR    UINT32_MAX
 

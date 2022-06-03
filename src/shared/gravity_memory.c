@@ -7,7 +7,7 @@
 //
 
 #include "gravity_memory.h"
-#include "gravity_vm.h"
+#include "../runtime/gravity_vm.h"
 
 #if !GRAVITY_MEMORY_DEBUG
 

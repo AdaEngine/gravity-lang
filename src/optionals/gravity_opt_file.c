@@ -6,12 +6,12 @@
 //  Copyright © 2020 Creolabs. All rights reserved.
 //
 
-#include "gravity_vm.h"
-#include "gravity_core.h"
-#include "gravity_hash.h"
-#include "gravity_utils.h"
-#include "gravity_macros.h"
-#include "gravity_vmmacros.h"
+#include "../runtime/gravity_vm.h"
+#include "../runtime/gravity_core.h"
+#include "../shared/gravity_hash.h"
+#include "../utils/gravity_utils.h"
+#include "../shared/gravity_macros.h"
+#include "../runtime/gravity_vmmacros.h"
 #include "gravity_opt_file.h"
 
 static gravity_class_t              *gravity_class_file = NULL;

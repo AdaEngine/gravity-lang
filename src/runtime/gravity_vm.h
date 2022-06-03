@@ -9,8 +9,8 @@
 #ifndef __GRAVITY_VM__
 #define __GRAVITY_VM__
 
-#include "gravity_delegate.h"
-#include "gravity_value.h"
+#include "../shared/gravity_delegate.h"
+#include "../shared/gravity_value.h"
 
 #ifdef __cplusplus
 extern "C" {

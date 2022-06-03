@@ -24,7 +24,7 @@
 #define VALUE_AS_STRING(x)                  ((gravity_string_t *)VALUE_AS_OBJECT(x))
 #define VALUE_AS_FIBER(x)                   ((gravity_fiber_t *)VALUE_AS_OBJECT(x))
 #define VALUE_AS_FUNCTION(x)                ((gravity_function_t *)VALUE_AS_OBJECT(x))
-#define VALUE_AS_PROPERTY(x)                ((gravity_property_t *)VALUE_AS_OBJECT(x))
+#define VALUE_AS_PROPERTY(x)                ((gravity_property_t *)VALUE_AS_OBJECT(x)) // Not available?
 #define VALUE_AS_CLOSURE(x)                 ((gravity_closure_t *)VALUE_AS_OBJECT(x))
 #define VALUE_AS_CLASS(x)                   ((gravity_class_t *)VALUE_AS_OBJECT(x))
 #define VALUE_AS_INSTANCE(x)                ((gravity_instance_t *)VALUE_AS_OBJECT(x))

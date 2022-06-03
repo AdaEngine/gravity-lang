@@ -29,9 +29,9 @@
 
 #include "gravity_json.h"
 #include "gravity_utils.h"
-#include "gravity_memory.h"
-#include "gravity_array.h"
-#include "gravity_config.h"
+#include "../shared/gravity_memory.h"
+#include "../shared/gravity_array.h"
+#include "../shared/gravity_config.h"
 
 #include <inttypes.h>
 #include <math.h>

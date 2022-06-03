@@ -10,7 +10,7 @@
 
 #include "gravity_lexer.h"
 #include "gravity_token.h"
-#include "gravity_utils.h"
+#include "../utils/gravity_utils.h"
 
 struct gravity_lexer_t {
     const char                  *buffer;        // buffer

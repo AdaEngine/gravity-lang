@@ -8,13 +8,13 @@
 
 #include <inttypes.h>
 #include "gravity_hash.h"
-#include "gravity_core.h"
+#include "../runtime/gravity_core.h"
 #include "gravity_value.h"
-#include "gravity_utils.h"
+#include "../utils/gravity_utils.h"
 #include "gravity_memory.h"
 #include "gravity_macros.h"
 #include "gravity_opcodes.h"
-#include "gravity_vmmacros.h"
+#include "../runtime/gravity_vmmacros.h"
 
                                                 // mark object visited to avoid infinite loop
 #define SET_OBJECT_VISITED_FLAG(_obj, _flag)    (((gravity_object_t *)_obj)->gc.visited = _flag)

@@ -55,7 +55,7 @@
 // allowed in any non-local declaration
 
 #include "gravity_ast.h"
-#include "gravity_delegate.h"
+#include "../shared/gravity_delegate.h"
 
 bool gravity_semacheck1(gnode_t *node, gravity_delegate_t *delegate);
 

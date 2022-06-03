@@ -8,12 +8,12 @@
 
 // Some optimizations taken from: http://www.compileroptimizations.com/
 
-#include "gravity_hash.h"
+#include "../shared/gravity_hash.h"
 #include "gravity_optimizer.h"
-#include "gravity_opcodes.h"
+#include "../shared/gravity_opcodes.h"
 #include "gravity_ircode.h"
-#include "gravity_utils.h"
-#include "gravity_value.h"
+#include "../utils/gravity_utils.h"
+#include "../shared/gravity_value.h"
 
 #define IS_MOVE(inst)               ((inst) && (inst->op == MOVE))
 #define IS_RET(inst)                ((inst) && (inst->op == RET))

@@ -7,9 +7,9 @@
 //
 
 #include <assert.h>
-#include "gravity_value.h"
+#include "../shared/gravity_value.h"
 #include "gravity_debug.h"
-#include "gravity_vmmacros.h"
+#include "../runtime/gravity_vmmacros.h"
 
 const char *opcode_constname (int n) {
     switch (n) {

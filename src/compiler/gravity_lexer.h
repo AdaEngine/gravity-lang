@@ -9,7 +9,7 @@
 #ifndef __GRAVITY_LEXER__
 #define __GRAVITY_LEXER__
 
-#include "gravity_delegate.h"
+#include "../shared/gravity_delegate.h"
 #include "gravity_token.h"
 #include "debug_macros.h"
 

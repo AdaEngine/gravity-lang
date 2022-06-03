@@ -10,7 +10,7 @@
 #define __GRAVITY_SEMACHECK2__
 
 #include "gravity_ast.h"
-#include "gravity_delegate.h"
+#include "../shared/gravity_delegate.h"
 
 // Responsible to gather and check local identifiers
 // Complete check for all identifiers and report not found errors
