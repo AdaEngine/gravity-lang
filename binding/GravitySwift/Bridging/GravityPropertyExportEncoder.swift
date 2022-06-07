@@ -10,6 +10,7 @@ import CGravity
 
 public protocol GravityExportClassEncoderContainer {
     func bind(_ method: MethodDescriptor)
+    func bind(_ property: PropertyDescriptor)
 }
 
 public final class _GravityExportClassEncoderContainer<T: GSExportable>: GravityExportClassEncoderContainer {
@@ -18,6 +19,28 @@ public final class _GravityExportClassEncoderContainer<T: GSExportable>: Gravity
     
     init(descriptor: GravityBridgeClassDescriptor, type: T.Type) {
         self.descriptor = descriptor
+    }
+    
+    public func bind(_ property: PropertyDescriptor) {
+        let propertyPtr = Unmanaged.passRetained(property).toOpaque()
+        let clazz = self.descriptor.gClass
+        
+        let fget = gravity_closure_new(nil, gravity_function_new_bridged(nil, nil, propertyPtr))
+        let fset = property.isReadonly ? nil : fget // we use same closure to set and get, because vm can resolve it for us
+        let closure = gravity_closure_new(
+            nil,
+            gravity_function_new_special(nil, nil, UInt16(GRAVITY_BRIDGE_INDEX), fget, fset)
+        )
+        
+        property.name.withCString { ptr in
+            gravity_class_bind(
+                clazz,
+                ptr,
+                gravity_value_from_object(closure)
+            )
+        }
+        
+        self.descriptor.addProperty(property)
     }
     
     public func bind(_ method: MethodDescriptor) {

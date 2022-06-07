@@ -46,6 +46,10 @@ public final class GravityVirtualMachine {
         vmDelegate.bridge_string = bridgeString
         vmDelegate.bridge_initinstance = bridgeInitInstance
         vmDelegate.bridge_execute = bridgeExecute
+        vmDelegate.bridge_setvalue = bridgeSetValue
+        vmDelegate.bridge_getvalue = bridgeGetValue
+        vmDelegate.bridge_setundef = bridgeSetUndefValue
+        vmDelegate.bridge_getundef = bridgeGetUndefValue
         
         self.vmDelegate = vmDelegate
         self.vmPtr = gravity_vm_new(&self.vmDelegate)
@@ -104,12 +108,6 @@ public final class GravityVirtualMachine {
 
 public extension GravityVirtualMachine {
     func bindClass<T: GSExportable>(with type: T.Type) {
-        
-//        let delegate = gravity_vm_delegate(self.vmPtr)
-//        delegate?.pointee.bridge_initinstance = bridgeInitInstance
-//        delegate?.pointee.bridge_execute = bridgeExecute
-        
-        
         self.setGCEnabled(false)
         
         let encoder = GravityExportEncoder(vm: self)
@@ -119,13 +117,9 @@ public extension GravityVirtualMachine {
         let descriptors = encoder.classDescriptors
         
         for descriptor in descriptors {
-            
-            descriptor.registredName.withCString { ptr in
-                gravity_vm_setvalue(self.vmPtr, ptr, gravity_value_from_object(descriptor.gClass))
-            }
-            
             assert(bridgeClassDescriptors[descriptor.registredName] == nil, "We have registred class with name - \(descriptor.registredName).")
             
+            self.setValue(descriptor.gClass, forKey: descriptor.registredName)
             self.bridgeClassDescriptors[descriptor.registredName] = descriptor
         }
         
@@ -363,37 +357,6 @@ private func bridgeExecute(
     } else {
         return GravityReturn.value(GSValue(object: value, in: vm), rIndex: Int32(rIndex), vm: vm)
     }
- 
-//
-//    let classIdentifier = String(cString: instance.pointee.identifier)
-//    let object = GSValue(object: instance, in: virtualMachine)
-//    let methodName = methodNameValue.toString
-//
-//    guard let desc = virtualMachine.getClassDescriptor(for: classIdentifier) else {
-//        return gravity_return_error(vm, Int32(rIndex), "Can't find class descriptor for identifier - \(classIdentifier).")
-//    }
-//
-//    // first two indecies always contains instance information and method name
-//    let args: [GSValue] = (2..<nargs).map { index in
-//        let value = args[Int(index)]
-//        return GSValue(value: value, vm: virtualMachine)
-//    }
-//
-//    guard let method = desc.methodDescriptions.first(where: { $0.name == methodName }) else {
-//        return gravity_return_error(vm, Int32(rIndex), "Can't find method constructor")
-//    }
-//
-//    virtualMachine.setGCEnabled(false)
-//    defer { virtualMachine.setGCEnabled(true) }
-//
-//    let result = method.call(in: object, with: args)
-//
-//    if result is Void {
-//        return gravity_return_no_value()
-//    } else {
-//        let returnValue = GSValue(object: result, in: virtualMachine)
-//        return gravity_return_value(vm, returnValue.value, Int32(rIndex))
-//    }
 }
 
 func bridgeSetValue(
@@ -405,10 +368,22 @@ func bridgeSetValue(
 ) -> Bool {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
     
-    let value = GSValue(object: value, in: vm)
-    let target = GSValue(object: target, in: vm)
+    guard let xdata = xdata else {
+        return GravityReturn.error("Extra data for bridging not passed!", vm: vm)
+    }
+
+    let target = GSValue(value: target, in: vm)
+    let newValue = GSValue(value: value, in: vm)
+
+    let propertyDescriptor = Unmanaged<PropertyDescriptor>.fromOpaque(xdata).takeUnretainedValue()
     
-    return vm.delegate.virtualMachine(vm, didSetValue: value, in: target, forKey: String(cString: key!))
+    if propertyDescriptor.isReadonly {
+        return GravityReturn.error("Unexpected calling setter in readonly property!", vm: vm)
+    }
+    
+    propertyDescriptor.setValue(newValue, in: target)
+
+    return GravityReturn.noValue()
 }
 
 func bridgeSetUndefValue(
@@ -431,13 +406,20 @@ func bridgeGetValue(
     xdata: UnsafeMutableRawPointer?,
     target: gravity_value_t,
     key: UnsafePointer<CChar>?,
-    vindex: UInt32
+    rIndex: UInt32
 ) -> Bool {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
+        
+    guard let xdata = xdata else {
+        return GravityReturn.error("Extra data for bridging not passed!", vm: vm)
+    }
     
-    let target = GSValue(object: target, in: vm)
+    let target = GSValue(value: target, in: vm)
+
+    let propertyDescriptor = Unmanaged<PropertyDescriptor>.fromOpaque(xdata).takeUnretainedValue()
+    let value = propertyDescriptor.getValue(in: target)
     
-    return vm.delegate.virtualMachine(vm, didGetValueFrom: target, forKey: String(cString: key!), vIndex: vindex)
+    return GravityReturn.value(value, rIndex: Int32(rIndex), vm: vm)
 }
 
 func bridgeGetUndefValue(

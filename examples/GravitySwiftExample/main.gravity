@@ -7,9 +7,19 @@
 
 extern var SwiftObject
 
+//class MySwiftObject: SwiftObject {
+//    func printText() {
+//        System.print("printText \(self.text)")
+//    }
+//}
+
 func main() {
     var obj = SwiftObject()
+    System.print(obj.random)
+    System.print(obj.text)
     obj.text = "Some new text"
+    System.print(obj.text)
     obj.printKek()
+//    obj.printText()
     System.print(obj.debug(365))
 }
