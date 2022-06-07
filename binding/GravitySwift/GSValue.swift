@@ -7,21 +7,21 @@
 
 import CGravity
 
-/// Gravity Script Value
-
-@dynamicCallable
+/// Wrapper around Gravity Script Value.
+/// You can create your GSValue and pass it to virtual machine, or cast given to valid format.
 public class GSValue {
     
     internal private(set) var value: gravity_value_t
     unowned let vm: GravityVirtualMachine
     
-    public init(value: gravity_value_t, vm: GravityVirtualMachine) {
+    public init(value: gravity_value_t, in vm: GravityVirtualMachine) {
         self.value = value
         self.vm = vm
     }
 }
 
 public extension GSValue {
+    /// Create a new string in virtual machine memory.
     convenience init(string: String, in vm: GravityVirtualMachine) {
         let mutStr = UnsafeMutablePointer<CChar>.init(mutating: string.toPointer())
         
@@ -32,37 +32,43 @@ public extension GSValue {
             UInt32(string.count)
         )
         let value = gravity_value_from_object(object)
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
+    /// Create a new closed range in virtual machine memory.
     convenience init(range: ClosedRange<Int>, in vm: GravityVirtualMachine) {
         let object = gravity_range_new(vm.vmPtr, Int64(range.lowerBound), Int64(range.upperBound), true)
         let value = gravity_value_from_object(object)
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
+    /// Create a new range in virtual machine memory.
     convenience init(range: Range<Int>, in vm: GravityVirtualMachine) {
         let object = gravity_range_new(vm.vmPtr, Int64(range.lowerBound), Int64(range.upperBound), false)
         let value = gravity_value_from_object(object)
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
+    /// Create a new double in virtual machine memory.
     convenience init(double: Double, in vm: GravityVirtualMachine) {
         let value = gravity_value_from_float(double)
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
+    /// Create a new integer in virtual machine memory.
     convenience init(integer: Int, in vm: GravityVirtualMachine) {
         let value = gravity_value_from_int(gravity_int_t(integer))
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
+    /// Create a new boolean in virtual machine memory.
     convenience init(boolean: Bool, in vm: GravityVirtualMachine) {
         let value = gravity_value_from_bool(boolean)
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
-    // Not create instance with exportable
+    /// Create new instance of object, or store `gravity_value_t` or any refs to `gravity_object_y`.
+    /// If object type not matched with supported type, then create undefined value.
     convenience init<T>(object: T, in vm: GravityVirtualMachine) {
         if let string = object as? String {
             self.init(string: string, in: vm)
@@ -72,42 +78,51 @@ public extension GSValue {
             self.init(double: double, in: vm)
         } else if let bool = object as? Bool {
             self.init(boolean: bool, in: vm)
-        } else if let exportType = object as? AnyClass {
-            fatalError()
-        } else {
+        } else if let exportType = object as? GSExportable {
             
-            var instance = object
-            if let obj = GSInstance(for: &instance, in: vm) {
-                vm.setInstance(obj)
-                let value = gravity_value_from_object(obj.instance)
-                self.init(value: value, vm: vm)
-                return
-            }
+            fatalError()
+        } else if let value = object as? gravity_value_t {
+            self.init(value: value, in: vm)
+        } else if let gravityObject = object as? UnsafeMutablePointer<gravity_object_t> {
+            let value = gravity_value_from_object(gravityObject)
+            self.init(value: value, in: vm)
+        } else {
+//            var instance = object
+//            if let obj = GSInstance(for: &instance, in: vm) {
+//                vm.setInstance(obj)
+//                let value = gravity_value_from_object(obj.instance)
+//                self.init(value: value, vm: vm)
+//                return
+//            }
             
             self.init(undefinedIn: vm)
         }
     }
     
+    /// Create a new array in virtual machine memory with given length.
     convenience init(newArrayIn vm: GravityVirtualMachine, length: Int = 1) {
         let list = gravity_list_new(vm.vmPtr, UInt32(length))
         let value = gravity_value_from_object(list)
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
+    /// Create a new map in virtual machine memory with given length.
     convenience init(newMapIn vm: GravityVirtualMachine, length: Int = 1) {
         let list = gravity_map_new(vm.vmPtr, UInt32(length))
         let value = gravity_value_from_object(list)
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
+    /// Create a new null value in virtual machine memory.
     convenience init(nullIn vm: GravityVirtualMachine) {
         let value = gravity_value_from_null()
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
     
+    /// Create a new undefined value in virtual machine memory.
     convenience init(undefinedIn vm: GravityVirtualMachine) {
         let value = gravity_value_from_undefined()
-        self.init(value: value, vm: vm)
+        self.init(value: value, in: vm)
     }
 }
 
@@ -153,49 +168,142 @@ public extension GSValue {
         return range.from...range.to
     }
     
-    // TODO: Currently not work with String/Double/Int/Range/List/Map
+    // TODO: Currently not work with Range/List/Map
     func toObjectOf<T>(_ type: T.Type) -> T? {
-        if !self.isInstance {
-            return nil
+        
+        if type == String.self {
+            return self.toString as? T
         }
         
-        let instance = gravity_cast_value_as_instance(self.value)
-        // xdata contains pointer to object in memory
-        return instance?.pointee.xdata.load(as: T.self)
+        if type == Int.self {
+            return Int(self.toInteger) as? T
+        }
+        
+        if type == Int32.self {
+            return Int32(self.toInteger) as? T
+        }
+        
+        if type == Int16.self {
+            return Int16(self.toInteger) as? T
+        }
+        
+        if type == Int8.self {
+            return Int8(self.toInteger) as? T
+        }
+        
+        if type == Int8.self {
+            return Int8(self.toInteger) as? T
+        }
+        
+        if type == UInt8.self {
+            return UInt8(self.toInteger) as? T
+        }
+        
+        if type == UInt16.self {
+            return UInt16(self.toInteger) as? T
+        }
+        
+        if type == UInt32.self {
+            return UInt32(self.toInteger) as? T
+        }
+        
+        if type == Double.self {
+            return self.toDouble as? T
+        }
+        
+        // Extra data always contains reference to an object, and we should work with it as AnyObject, but cast to T. With that hack we can support both value and reference types.
+        guard let xdata = xData else { return nil }
+        // We use unretained value, because we will release it later in bridge_free function.
+        return Unmanaged<AnyObject>.fromOpaque(xdata).takeUnretainedValue() as? T
+    }
+}
+
+extension GSValue: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        let value = gravity_value_hash(self.value)
+        hasher.combine(value)
     }
 }
 
 public extension GSValue {
-    // TODO: Currently not work
-    func hasMethod(named name: String) -> Bool {
-        guard isInstance || isClass else {
-            return false
-        }
-        
-        let key = GSValue(string: name, in: self.vm).value
-        let closure = gravity_class_lookup_closure(self.value.isa, key)
-        let obj = gravity_value_from_object(closure)
-        return gravity_value_isa_valid(obj)
+    
+    var size: UInt32 {
+        return gravity_value_size(self.vm.vmPtr, self.value)
     }
     
-    func hasProperty(named name: String) -> Bool {
-        let key = GSValue(string: name, in: self.vm).value
-        
-        let value: gravity_value_t
-        
-        if isInstance {
-            let instance = gravity_cast_value_as_instance(self.value)
-            value = gravity_instance_lookup_property(self.vm.vmPtr, instance, key)
-        } else if isClass {
-            // TODO: Currently not work
-            let clazz = gravity_cast_value_as_class(self.value)
-            guard let prop = gravity_class_lookup(clazz, key) else { return false }
-            value = gravity_value_from_object(prop)
-        } else {
+    var name: String {
+        let cString = gravity_value_name(self.value)
+        return cString.flatMap { String(cString: $0) } ?? ""
+    }
+    
+    var xData: UnsafeMutableRawPointer? {
+        return gravity_value_xdata(self.value)
+    }
+    
+    func hasMethod(named name: String) -> Bool {
+        if !isInstance {
             return false
         }
         
+        let instance = gravity_cast_value_as_instance(self.value)
+        
+        let closure = name.withCString { ptr in
+            gravity_instance_lookup_event(instance, name.toPointer())
+        }
+        
+        guard let closure = closure else {
+            return false
+        }
+        
+        let val = gravity_value_from_object(closure)
+        return gravity_value_isa_valid(val)
+    }
+    
+    // TODO: Currently not work
+    func hasClassMethod(named name: String) -> Bool {
+        if !(isClass || isInstance) {
+            return false
+        }
+        
+        let key = GSValue(string: name, in: self.vm).value
+        guard let closure = gravity_class_lookup_closure(self.value.isa, key) else {
+            return false
+        }
+        let obj = gravity_value_from_object(closure)
+        return gravity_value_isa_valid(obj)
+        
+    }
+    
+    /// Lookup only in instances properties.
+    /// If you want check class properties use `hasClassProperty` method.
+    func hasProperty(named name: String) -> Bool {
+        if !isInstance {
+            return false
+        }
+        
+        let key = GSValue(string: name, in: self.vm).value
+        let instance = gravity_cast_value_as_instance(self.value)
+        let value = gravity_instance_lookup_property(self.vm.vmPtr, instance, key)
+        
         return gravity_value_isa_valid(value)
+    }
+    
+    // TODO: Currently not work
+    func hasClassProperty(named name: String) -> Bool {
+        if !isClass {
+            return false
+        }
+        
+        let key = GSValue(string: name, in: self.vm).value
+        let clazz = gravity_cast_value_as_class(self.value)
+        guard let prop = gravity_class_lookup(clazz, key) else {
+            return false
+            
+        }
+        let value = gravity_value_from_object(prop)
+        
+        return gravity_value_isa_valid(value)
+        
     }
 }
 
@@ -208,14 +316,23 @@ extension GSValue: Equatable {
 }
 
 public extension GSValue {
-    func dynamicallyCall(withKeywordArguments args: KeyValuePairs<String, Int>) -> GSValue {
-        
-        if !self.isCallable {
-            fatalError()
-//            GSValue(value: <#T##gravity_value_t#>, vm: <#T##GravityVirtualMachine#>)
+    func callMethod(named name: String, with args: [Any]) -> GSValue? {
+        if self.hasMethod(named: name) {
+            return nil
         }
         
-        fatalError()
+        let closure = gravity_cast_value_as_closure(self.value)
+        let arguments = args.map { GSValue(object: $0, in: self.vm) }
+        
+        return self.vm.execute(binary: closure, sender: self, params: arguments)
+    }
+    
+    // Not sure that is works
+    func callConstructor(with args: [Any]) -> GSValue? {
+        let closure = gravity_cast_value_as_closure(self.value)
+        let arguments = args.map { GSValue(object: $0, in: self.vm) }
+        
+        return self.vm.execute(binary: closure, sender: nil, params: arguments)
     }
 }
 

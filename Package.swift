@@ -21,7 +21,8 @@ let package = Package(
         .executableTarget(
             name: "GravitySwiftExample",
             dependencies: ["Gravity"],
-            path: "examples/GravitySwiftExample"
+            path: "examples/GravitySwiftExample",
+            resources: [.copy("main.gravity")]
         ),
         
         .target(

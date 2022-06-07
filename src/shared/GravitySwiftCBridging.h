@@ -233,6 +233,10 @@ gravity_function_t * new_function(void * fptr) {
     return NEW_FUNCTION(fptr);
 }
 
+gravity_value_t new_closure_value(gravity_c_internal fptr) {
+    return NEW_CLOSURE_VALUE(fptr);
+}
+
 gravity_value_t gravity_get_args_value_at_index(gravity_value_t *args, int index) {
     return GET_VALUE(index);
 }
@@ -243,8 +247,19 @@ bool gravity_return_no_value() {
     RETURN_NOVALUE();
 }
 
-bool gravity_return_value(gravity_vm *vm, gravity_value_t value, int index) {
-    RETURN_VALUE(value, index);
+bool gravity_return_value(gravity_vm *vm, gravity_value_t value, int rindex) {
+    RETURN_VALUE(value, rindex);
+}
+
+bool gravity_return_error_for_rindex(gravity_vm *vm, int rindex, const char *msg) {
+    gravity_fiber_seterror(gravity_vm_fiber(vm), msg);
+    gravity_vm_setslot(vm, VALUE_FROM_NULL, rindex);
+    return false;
+}
+
+bool gravity_return_error(gravity_vm *vm, const char *msg) {
+    gravity_fiber_seterror(gravity_vm_fiber(vm), msg);
+    return false;
 }
 
 bool gravity_return_closure(gravity_vm *vm, gravity_value_t value, int index) {

@@ -531,9 +531,9 @@ static void objc_class_scan (gravity_vm* vm, Class native_class, gravity_class_t
 gravity_class_t *objc_class_load (gravity_vm *vm, const char *name) {
     
     // check if class is already loaded into VM
-    gravity_value_t v = gravity_vm_getvalue(vm, name, (uint32_t)strlen(name));
-    if (VALUE_ISA_VALID(v)) return VALUE_AS_CLASS(v);
-    
+//    gravity_value_t v = gravity_vm_getvalue(vm, name, (uint32_t)strlen(name));
+//    if (VALUE_ISA_VALID(v)) return VALUE_AS_CLASS(v);
+//    
     // lookup class into objc runtime (sanity check)
     Class native_class = objc_getClass(name);
     if (native_class == NULL) {
@@ -544,48 +544,50 @@ gravity_class_t *objc_class_load (gravity_vm *vm, const char *name) {
     // recursively scan class hierarchy
     gravity_class_t *result = NULL;
     gravity_class_t *base = NULL;
-    while (native_class) {
-        DEBUG_BRIDGE(@"Loading class %s", name);
+//    while (native_class) {
+//        DEBUG_BRIDGE(@"Loading class %s", name);
         
         // create gravity class
         gravity_class_t *c = gravity_class_new_pair(vm, name, NULL, 0, 0);
         gravity_class_setxdata(c, RETAIN_OBJC_VALUE(native_class));
         
+    result = c;
+    
         // instance
         objc_class_scan(vm, native_class, c);
         
         // meta
-        objc_class_scan(vm, objc_getMetaClass(name), c->objclass);
+//        objc_class_scan(vm, objc_getMetaClass(name), c->objclass);
         
-        // classes loaded from bridge are globally availables
-        gravity_vm_setvalue(vm, name, VALUE_FROM_OBJECT(c));
-        
-        // c is overwritten in the loop, so save the first class and returns it
-        if (!result) result = c;
-        
-        // set super class
-        if (base) gravity_class_setsuper(base, c);
-        
-        // check for superclass
-        native_class = class_getSuperclass(native_class);
-        if (!native_class) break;
-        
-        if (native_class == [NSObject class]) break;
-        
-        // check if superclass is already loaded into gravity
-        name = class_getName(native_class);
-        gravity_value_t _v = gravity_vm_getvalue(vm, name, (uint32_t)strlen(name));
-        if (VALUE_ISA_VALID(_v)) {
-            DEBUG_BRIDGE(@"Loading class %s (already found in hierarchy)", name);
-            // super class is already registered in gravity runtime
-            // so set c super and stop loop
-            gravity_class_setsuper(c, (gravity_class_t *)VALUE_AS_OBJECT(_v));
-            break;
-        }
-        
-        // save base to set super
-        base = c;
-    }
+//        // classes loaded from bridge are globally availables
+//        gravity_vm_setvalue(vm, name, VALUE_FROM_OBJECT(c));
+//
+//        // c is overwritten in the loop, so save the first class and returns it
+//        if (!result) result = c;
+//
+//        // set super class
+//        if (base) gravity_class_setsuper(base, c);
+//
+//        // check for superclass
+//        native_class = class_getSuperclass(native_class);
+//        if (!native_class) break;
+//
+//        if (native_class == [NSObject class]) break;
+//
+//        // check if superclass is already loaded into gravity
+//        name = class_getName(native_class);
+//        gravity_value_t _v = gravity_vm_getvalue(vm, name, (uint32_t)strlen(name));
+//        if (VALUE_ISA_VALID(_v)) {
+//            DEBUG_BRIDGE(@"Loading class %s (already found in hierarchy)", name);
+//            // super class is already registered in gravity runtime
+//            // so set c super and stop loop
+//            gravity_class_setsuper(c, (gravity_class_t *)VALUE_AS_OBJECT(_v));
+//            break;
+//        }
+//
+//        // save base to set super
+//        base = c;
+//    }
     
     return result;
 }
@@ -599,7 +601,7 @@ static bool objc_load (gravity_vm* vm, gravity_value_t *args, uint16_t nargs, ui
     gravity_gc_setenabled(vm, true);
     if (!c) return false;
     
-    RETURN_VALUE(VALUE_FROM_OBJECT(c), rindex);
+//    RETURN_VALUE(VALUE_FROM_OBJECT(c), rindex);
     return true;
 }
 
@@ -671,18 +673,20 @@ void objc_register (gravity_vm *vm) {
     // register objc.loadClass method
     gravity_gc_setenabled(vm, false);
     
+    gravity_class_t *c = objc_class_load(vm, "NSAlert");
+    
     // register objc class
-    gravity_class_t *c = gravity_class_new_pair(vm, BRIDGE_NAME, NULL, 0, 0);
+//    gravity_class_t *c = gravity_class_new_pair(vm, "NSAlert", NULL, 0, 0);
     
     // register class_load
-    gravity_closure_t *closure1 = gravity_closure_new(vm, gravity_function_new_internal(vm, NULL, objc_load, 0));
-    gravity_class_bind(gravity_class_get_meta(c), BRIDGE_LOAD, VALUE_FROM_OBJECT(closure1));
+//    gravity_closure_t *closure1 = gravity_closure_new(vm, gravity_function_new_internal(vm, NULL, objc_load, 0));
+//    gravity_class_bind(gravity_class_get_meta(c), BRIDGE_LOAD, VALUE_FROM_OBJECT(closure1));
     
     // register exec
-    gravity_closure_t *closure2 = gravity_closure_new(vm, gravity_function_new_internal(vm, NULL, objc_exec, 0));
-    gravity_class_bind(gravity_class_get_meta(c), BRIDGE_EXECUTE, VALUE_FROM_OBJECT(closure2));
+//    gravity_closure_t *closure2 = gravity_closure_new(vm, gravity_function_new_internal(vm, NULL, objc_exec, 0));
+//    gravity_class_bind(gravity_class_get_meta(c), BRIDGE_EXECUTE, VALUE_FROM_OBJECT(closure2));
     
-    gravity_vm_setvalue(vm, BRIDGE_NAME, VALUE_FROM_OBJECT(c));
+    gravity_vm_setvalue(vm, "NSAlert", VALUE_FROM_OBJECT(c));
     gravity_gc_setenabled(vm, true);
 }
 
@@ -1384,34 +1388,35 @@ bool bridge_initinstance (gravity_vm *vm, void *xdata, gravity_value_t ctx, grav
         RETURN_NOVALUE();
     }
     
-    // there are more arguments so execute the init function
-    void *saved = gravity_vm_getdata(vm);
-    args[0] = VALUE_FROM_OBJECT(instance);
-    if (!bridge_execute(vm, xdata, ctx, args, nargs, GRAVITY_DATA_REGISTER)) {
-        gravity_instance_setxdata(instance, NULL);
-        return false;
-    }
-    
-    // obj2 can be different from obj if the init method returns a different object from the previously allocated one
-    id obj2 = (__bridge id)(gravity_vm_getdata(vm));
-    gravity_vm_setdata(vm, saved);
-    if (!obj2) {
-        gravity_instance_setxdata(instance, NULL);
-        NSString *name = NULL;
-        RETURN_ERROR("Unable to initialize object of type %s.", (name) ? name.UTF8String : class->identifier);
-    }
-    
-    #if GRAVITY_BRIDGE_DEBUG_MEMORY
-    NSLog(@"Created instance %p (%@)", obj2, NSStringFromClass([obj2 class]));
-    #endif
-    
-    if (obj != obj2) {
-        // see note1 above
-        // RELEASE_OBJC_VALUE(obj);
-        // obj2 has already been retained in the bridge_execute
-        gravity_instance_setxdata(instance, (__bridge void *)(obj2));
-    }
-    RETURN_NOVALUE();
+//    // there are more arguments so execute the init function
+//    void *saved = gravity_vm_getdata(vm);
+//    args[0] = VALUE_FROM_OBJECT(instance);
+//    if (!bridge_execute(vm, xdata, ctx, args, nargs, GRAVITY_DATA_REGISTER)) {
+//        gravity_instance_setxdata(instance, NULL);
+//        return false;
+//    }
+//
+//    // obj2 can be different from obj if the init method returns a different object from the previously allocated one
+//    id obj2 = (__bridge id)(gravity_vm_getdata(vm));
+//    gravity_vm_setdata(vm, saved);
+//    if (!obj2) {
+//        gravity_instance_setxdata(instance, NULL);
+//        NSString *name = NULL;
+//        RETURN_ERROR("Unable to initialize object of type %s.", (name) ? name.UTF8String : class->identifier);
+//    }
+//
+//    #if GRAVITY_BRIDGE_DEBUG_MEMORY
+//    NSLog(@"Created instance %p (%@)", obj2, NSStringFromClass([obj2 class]));
+//    #endif
+//
+//    if (obj != obj2) {
+//        // see note1 above
+//        // RELEASE_OBJC_VALUE(obj);
+//        // obj2 has already been retained in the bridge_execute
+//        gravity_instance_setxdata(instance, (__bridge void *)(obj2));
+//    }
+//    RETURN_NOVALUE();
+    return false;
 }
 
 bool bridge_setvalue (gravity_vm *vm, void *xdata, gravity_value_t target, const char *key, gravity_value_t value) {

@@ -7,36 +7,7 @@
 
 import Gravity
 import CGravity
-
-let sourceCode = """
-//extern var SwiftObject
-//extern var swiftObj
-
-class SomeClass {
-
-    static var staticText = "Some Text"
-    var text: String = "some text"
-    
-    func init() {
-        System.print("init")
-    }
-
-    func printHello() {
-        System.print("Hello")
-    }
-
-}
-
-var someClass = SomeClass()
-var someClassStatic = SomeClass
-
-func main() {
-    someClass.printHello()
-//    var swiftObj = SwiftObject()
-//    swiftObj.printKek()
-}
-
-"""
+import Foundation
 
 class GVMDelegateImpl: GravityVirtualMachineDelegate {
     func virtualMachineDidReciveLog(_ virtualMachine: GravityVirtualMachine, message: String, data: UnsafeMutableRawPointer?) {
@@ -44,58 +15,54 @@ class GVMDelegateImpl: GravityVirtualMachineDelegate {
     }
     
     func virtualMachineDidClearLog(_ virtualMachine: GravityVirtualMachine, data: UnsafeMutableRawPointer?) {
-        print("clear")
+        print("claer")
     }
     
-    func virtualMachineBridgeEquals(_ virtualMachine: GravityVirtualMachine, lhsObject: GSObject, rhsObject: GSObject) -> Bool {
-        return true
+    func virtualMachineBridgeEquals(_ virtualMachine: GravityVirtualMachine, lhsValue: GSValue, rhsValue: GSValue) -> Bool {
+        return lhsValue == rhsValue
     }
     
-    func virtalMachine(_ virtualMachine: GravityVirtualMachine, didRequestCloneFor object: GSObject) -> GSObject {
+    func virtalMachine(_ virtualMachine: GravityVirtualMachine, didRequestCloneFor object: GSValue) -> GSValue {
         return object
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine) {
-        
+    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didExecuteIn ctx: GSValue, arguments: [GSValue], argumentsCount: Int16, vIndex: UInt32, data: UnsafeMutableRawPointer?) -> Bool {
+        return false
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didExecuteIn ctx: gravity_value_t, arguments: [gravity_value_t], argumentsCount: Int16, vIndex: UInt32, data: UnsafeMutableRawPointer?) -> Bool {
-        return true
+    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didSetValue value: GSValue, in target: GSValue, forKey key: String) -> Bool {
+        return false
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didSetValue value: gravity_value_t, in target: gravity_value_t, forKey key: String) -> Bool {
-        return true
+    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didGetValueFrom target: GSValue, forKey: String, vIndex: UInt32) -> Bool {
+        return false
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didGetValueFrom target: gravity_value_t, forKey: String, vIndex: UInt32) -> Bool {
-        return true
+    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didSetUndefValue value: GSValue, in target: GSValue, forKey key: String) -> Bool {
+        return false
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didSetUndefValue value: gravity_value_t, in target: gravity_value_t, forKey key: String) -> Bool {
-        return true
-    }
-    
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didGetUndefValueFrom target: gravity_value_t, forKey: String, vIndex: UInt32) -> Bool {
-        return true
+    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didGetUndefValueFrom target: GSValue, forKey: String, vIndex: UInt32) -> Bool {
+        return false
     }
     
     func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestStringWith length: UInt32, data: UnsafeMutableRawPointer?) -> String {
-        return "true"
+        return ""
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestFree object: gravity_object_t) {
-        
+    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestFree object: GSValue) {
+        return
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestSizeFor object: gravity_object_t) -> UInt32 {
+    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestSizeFor object: GSValue) -> UInt32 {
         return 1
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didInitObjectIn ctx: gravity_value_t, instance: UnsafeMutablePointer<gravity_instance_t>?, arguments: [gravity_value_t], argumentsCount: Int16, data: UnsafeMutableRawPointer?) -> Bool {
-        return true
+    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didInitObjectIn ctx: GSValue, instance: UnsafeMutablePointer<gravity_instance_t>?, arguments: [GSValue], argumentsCount: Int16, data: UnsafeMutableRawPointer?) -> Bool {
+        return false
     }
     
-    
+  
 }
 
 let vmDelegate = GVMDelegateImpl()
@@ -106,41 +73,21 @@ let settings = GravityVirtualMachine.Settings(
     xdata: nil
 )
 
+let sourceCodePath = Bundle.module.path(forResource: "main", ofType: "gravity")!
+let sourceCode = try String(contentsOfFile: sourceCodePath)
+
 let vm = GravityVirtualMachine(settings: settings, delegate: vmDelegate)
 
-let compiler = GravityCompiler()
-let binary = compiler.compile(source: sourceCode)
-
-compiler.transferMem(to: vm)
-
-let swiftObject = SwiftObject()
-
-//vm.setValue(swiftObject, forKey: "swiftObj")
-
-//let obj = vm["swiftObj"]
-//print(obj.toString)
-
-
-
-let result = vm.executeMain(for: binary)
-
-let s = vm["someClass"]
-
-let stat = vm["someClassStatic"]
-
-//print(s.hasMethod(named: "printHello"))
-print(stat.hasProperty(named: "staticText"))
-
-print("result", result)
-
-
-class SwiftObject: GravityExportable {
+class SwiftObject: GSExportable {
     static func export(in encoder: GravityExportEncoder) throws {
-        let container = try encoder.registerClassWithConstructor(named: "SwiftObject", constructor: { _ in
-            SwiftObject()
-        })
-        var printKek = SwiftObject.printKek
-        container.bindMethod(named: "printKek", callback: &printKek)
+        let container = try encoder.makeContainer(for: SwiftObject.self, named: "SwiftObject")
+        container.bind(.constructor(SwiftObject.init))
+        container.bind(.method(SwiftObject.debug(_:), named: "debug"))
+        container.bind(.method(SwiftObject.printKek, named: "printKek"))
+    }
+    
+    init() {
+        print("SwiftObject Init")
     }
     
     var text: String = "kek"
@@ -148,4 +95,19 @@ class SwiftObject: GravityExportable {
     func printKek() {
         print(text)
     }
+    
+    func debug(_ value: Int) -> String {
+        return "Debug value is \(value)"
+    }
 }
+
+
+let compiler = GravityCompiler()
+let binary = compiler.compile(source: sourceCode)
+
+compiler.transferMem(to: vm)
+
+vm.bindClass(with: SwiftObject.self)
+
+let res = vm.executeMain(for: binary)
+

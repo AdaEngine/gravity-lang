@@ -482,6 +482,7 @@
 		A9F7642125CFC9C80027A085 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GQXYFFXCUX;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -492,6 +493,7 @@
 		A9F7642225CFC9C80027A085 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GQXYFFXCUX;
 				ENABLE_HARDENED_RUNTIME = YES;

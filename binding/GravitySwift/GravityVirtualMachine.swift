@@ -1,74 +1,16 @@
-import CGravity
+//
+//  GravityVirtualMachine.swift
+//
+//
+//  Created by v.prusakov on 6/4/22.
+//
 
-@_implementationOnly import Foundation
-
-public protocol GravityVirtualMachineDelegate: AnyObject {
-    
-    func virtualMachineDidReciveLog(_ virtualMachine: GravityVirtualMachine, message: String, data: UnsafeMutableRawPointer?)
-    func virtualMachineDidClearLog(_ virtualMachine: GravityVirtualMachine, data: UnsafeMutableRawPointer?)
-    
-    func virtualMachineBridgeEquals(_ virtualMachine: GravityVirtualMachine, lhsObject: GSObject, rhsObject: GSObject) -> Bool
-    
-    func virtalMachine(_ virtualMachine: GravityVirtualMachine, didRequestCloneFor object: GSObject) -> GSObject
-    
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine)
-    
-    func virtualMachine(
-        _ virtualMachine: GravityVirtualMachine,
-        didExecuteIn ctx: gravity_value_t,
-        arguments: [gravity_value_t],
-        argumentsCount: Int16,
-        vIndex: UInt32,
-        data: UnsafeMutableRawPointer?
-    ) -> Bool
-    
-    func virtualMachine(
-        _ virtualMachine: GravityVirtualMachine,
-        didSetValue value: gravity_value_t,
-        in target: gravity_value_t,
-        forKey key: String
-    ) -> Bool
-    
-    func virtualMachine(
-        _ virtualMachine: GravityVirtualMachine,
-        didGetValueFrom target: gravity_value_t,
-        forKey: String,
-        vIndex: UInt32
-    ) -> Bool
-    
-    func virtualMachine(
-        _ virtualMachine: GravityVirtualMachine,
-        didSetUndefValue value: gravity_value_t,
-        in target: gravity_value_t,
-        forKey key: String
-    ) -> Bool
-    
-    func virtualMachine(
-        _ virtualMachine: GravityVirtualMachine,
-        didGetUndefValueFrom target: gravity_value_t,
-        forKey: String,
-        vIndex: UInt32
-    ) -> Bool
-    
-    // MARK: Memory managment
-    
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestStringWith length: UInt32, data: UnsafeMutableRawPointer?) -> String
-    
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestFree object: gravity_object_t)
-    
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestSizeFor object: gravity_object_t) -> UInt32
-    
-    func virtualMachine(
-        _ virtualMachine: GravityVirtualMachine,
-        didInitObjectIn ctx: gravity_value_t,
-        instance:  UnsafeMutablePointer<gravity_instance_t>?,
-        arguments: [gravity_value_t],
-        argumentsCount: Int16,
-        data: UnsafeMutableRawPointer?
-    ) -> Bool
-}
+@_exported import CGravity
+import Foundation
 
 public final class GravityVirtualMachine {
+    
+    private var bridgeClassDescriptors: [String : GravityBridgeClassDescriptor] = [:]
     
     public struct Settings {
         public var reportNullErrors: Bool
@@ -86,113 +28,136 @@ public final class GravityVirtualMachine {
         }
     }
     
-    private var instances: [GSInstance] = []
-    
     unowned let delegate: GravityVirtualMachineDelegate
     
     private var registredClass: [String: UnsafeMutablePointer<gravity_class_t>] = [:]
     
     internal private(set) var vmPtr: OpaquePointer
     
+    private var vmDelegate: gravity_delegate_t
+    
     public init(settings: Settings, delegate: GravityVirtualMachineDelegate) {
-        var vmDelegate = gravity_delegate_t(
-            xdata: settings.xdata,
-            report_null_errors: settings.reportNullErrors,
-            disable_gccheck_1: settings.disableGarbageCollectorCheck,
-            log_callback: logCallback,
-            log_clear: logClear,
-            error_callback: errorCallback,
-            unittest_callback: { _, errType, desc, note, value, row, col, xdata in
-                fatalError("")
-            },
-            parser_callback: { token, xdata in
-                return
-            },
-            type_callback: { token, type, xdata in
-                return
-            },
-            precode_callback: { xdata in
-                return nil
-            },
-            loadfile_callback: { fileName, size, fileId, xdata, isStatic in
-                return nil
-            },
-            filename_callback: { fileId, xdata in
-                return nil
-            },
-            optional_classes: { xdata in
-                return nil
-            },
-            bridge_initinstance: bridgeInitInstance,
-            bridge_setvalue: bridgeSetValue,
-            bridge_getvalue: bridgeGetValue,
-            bridge_setundef: bridgeSetUndefValue,
-            bridge_getundef: bridgeGetUndefValue,
-            bridge_execute: bridgeExecute,
-            bridge_blacken: { _, xdata in
-                fatalError("")
-            },
-            bridge_string: bridgeString,
-            bridge_equals: bridgeEquals,
-            bridge_clone: bridgeClone,
-            bridge_size: bridgeSize,
-            bridge_free: bridgeFree)
+        var vmDelegate = gravity_delegate_t()
+        vmDelegate.disable_gccheck_1 = settings.disableGarbageCollectorCheck
+        vmDelegate.report_null_errors = settings.reportNullErrors
+        vmDelegate.bridge_clone = bridgeClone
+        vmDelegate.bridge_free = bridgeFree
+        vmDelegate.bridge_equals = bridgeEquals
+        vmDelegate.bridge_string = bridgeString
+        vmDelegate.bridge_initinstance = bridgeInitInstance
+        vmDelegate.bridge_execute = bridgeExecute
         
-        self.vmPtr = gravity_vm_new(&vmDelegate)
+        self.vmDelegate = vmDelegate
+        self.vmPtr = gravity_vm_new(&self.vmDelegate)
         self.delegate = delegate
+        self.vmDelegate = vmDelegate
         
         Self.register(self)
     }
     
     deinit {
-        gravity_vm_free(self.vmPtr)
         Self.unregister(self)
+        gravity_vm_free(self.vmPtr)
     }
     
     // MARK: - Public
     
     @discardableResult
-    public func executeMain(for binary: UnsafeMutablePointer<gravity_closure_t>!) -> GSValue {
-        let runFinished = gravity_vm_runmain(self.vmPtr, binary)
+    public func executeMain(for binary: UnsafeMutablePointer<gravity_closure_t>!) -> GSValue? {
+        let runResult = gravity_vm_runmain(self.vmPtr, binary)
         
-        if runFinished {
+        if runResult {
             let result = gravity_vm_result(self.vmPtr)
-            return GSValue(value: result, vm: self)
+            return GSValue(value: result, in: self)
         }
         
-        fatalError()
+        return nil
     }
     
     @discardableResult
-    public func execute(binary: UnsafeMutablePointer<gravity_closure_t>!) {
-//        gravity_vm_runclosure(self.virtualMachine, binary, <#T##sender: gravity_value_t##gravity_value_t#>, <#T##params: UnsafeMutablePointer<gravity_value_t>!##UnsafeMutablePointer<gravity_value_t>!#>, <#T##nparams: UInt16##UInt16#>)
+    public func execute(
+        binary: UnsafeMutablePointer<gravity_closure_t>!,
+        sender: GSValue? = nil,
+        params: [GSValue] = []
+    ) -> GSValue? {
         
-        fatalError()
+        var args = params.map { $0.value }
+        let sender = (sender ?? GSValue(nullIn: self)).value
+        
+        let runResult = gravity_vm_runclosure(self.vmPtr, binary, sender, &args, UInt16(args.count))
+        
+        if runResult {
+            let result = gravity_vm_result(self.vmPtr)
+            return GSValue(value: result, in: self)
+        }
+        
+        return nil
+    }
+    
+    /// Off/On Garbage Collector
+    public func setGCEnabled(_ isEnabled: Bool) {
+        gravity_gc_setenabled(self.vmPtr, isEnabled)
     }
 }
 
+// MARK: - Bridging
+
 public extension GravityVirtualMachine {
-    func bindClass<T: GravityExportable>(with type: T.Type) {
+    func bindClass<T: GSExportable>(with type: T.Type) {
+        
+//        let delegate = gravity_vm_delegate(self.vmPtr)
+//        delegate?.pointee.bridge_initinstance = bridgeInitInstance
+//        delegate?.pointee.bridge_execute = bridgeExecute
+        
+        
+        self.setGCEnabled(false)
+        
         let encoder = GravityExportEncoder(vm: self)
         try! type.export(in: encoder)
+        // Collect all descriptors
+        
+        let descriptors = encoder.classDescriptors
+        
+        for descriptor in descriptors {
+            
+            descriptor.registredName.withCString { ptr in
+                gravity_vm_setvalue(self.vmPtr, ptr, gravity_value_from_object(descriptor.gClass))
+            }
+            
+            assert(bridgeClassDescriptors[descriptor.registredName] == nil, "We have registred class with name - \(descriptor.registredName).")
+            
+            self.bridgeClassDescriptors[descriptor.registredName] = descriptor
+        }
+        
+        self.setGCEnabled(true)
     }
     
     func setValue<T>(_ value: T, forKey key: String) {
         let gsValue = GSValue(object: value, in: self)
-        gravity_vm_setvalue(self.vmPtr, key.toPointer(), gsValue.value)
+        key.withCString { ptr in
+            gravity_vm_setvalue(self.vmPtr, ptr, gsValue.value)
+        }
     }
     
     subscript(_ key: String) -> GSValue {
-        let value = gravity_vm_getvalue(self.vmPtr, key.toPointer(), UInt32(key.count))
-        return GSValue(value: value, vm: self)
+        return self.getValue(forKey: key)
     }
     
-    func setInstance(_ instance: GSInstance) {
-        self.instances.append(instance)
+    func getValue(forKey key: String) -> GSValue {
+        let value = key.withCString { ptr in
+            return gravity_vm_getvalue(self.vmPtr, ptr, UInt32(key.count))
+        }
+        
+        return GSValue(value: value, in: self)
     }
     
-    func freeIntance(_ instance: GSInstance) {
-        self.instances.removeAll { $0 === instance }
+}
+
+// MARK: - Bridging Internal
+
+extension GravityVirtualMachine {
+    func getClassDescriptor(for name: String) -> GravityBridgeClassDescriptor? {
+        return bridgeClassDescriptors[name]
     }
 }
 
@@ -222,13 +187,15 @@ extension GravityVirtualMachine {
             return clazz
         }
         
-        let clazz = gravity_class_new_pair(
-            self.vmPtr, // vm
-            string.toPointer(), // name
-            nil, // parent class
-            0, // nivar
-            0 // nsvar
-        )
+        let clazz = string.withCString { ptr in
+            return gravity_class_new_pair(
+                self.vmPtr, // vm
+                ptr, // name
+                nil, // parent class
+                0, // nivar
+                0 // nsvar
+            )
+        }
         
         self.registredClass[string] = clazz
         
@@ -265,97 +232,213 @@ func logClear(_ vmPointer: OpaquePointer?, xdata: UnsafeMutableRawPointer?) {
     vm.delegate.virtualMachineDidClearLog(vm, data: xdata)
 }
 
-func errorCallback(_ vmPointer: OpaquePointer?, errType: error_type_t, message: UnsafePointer<CChar>?, errDesc: error_desc_t, xdata: UnsafeMutableRawPointer?) {
+func errorCallback(_ vmPointer: OpaquePointer?, errType: error_type_t, message: UnsafePointer<CChar>!, errDesc: error_desc_t, xdata: UnsafeMutableRawPointer?) {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
-}
-
-//func unittestCallback
-
-func bridgeExecute(_ vmPointer: OpaquePointer?, data: UnsafeMutableRawPointer?, ctx: gravity_value_t, argsPtr: UnsafeMutablePointer<gravity_value_t>?, argsCount: Int16, vIndex: UInt32) -> Bool {
-    guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
-    return vm.delegate.virtualMachine(
-        vm,
-        didExecuteIn: ctx,
-        arguments: [],
-        argumentsCount: argsCount,
-        vIndex: vIndex,
-        data: data
-    )
+    print("Error!", String(cString: message))
 }
 
 func bridgeFree(_ vmPointer: OpaquePointer?, objptr: UnsafeMutablePointer<gravity_object_t>?) {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
     
-    vm.delegate.virtualMachine(vm, didRequestFree: objptr!.pointee)
+    guard let data = objptr?.pointee.xdata else {
+        GravityReturn.error("Required xdata is empty.", vm: vm)
+        return
+    }
+    
+    
+    
+    
+    
+//    let value = GSValue(object: objptr, in: vm)
+//    vm.delegate.virtualMachine(vm, didRequestFree: value)
 }
 
 func bridgeSize(_ vmPointer: OpaquePointer?, objptr: UnsafeMutablePointer<gravity_object_t>?) -> UInt32 {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
-    return vm.delegate.virtualMachine(vm, didRequestSizeFor: objptr!.pointee)
+    
+    let value = GSValue(object: objptr, in: vm)
+    return vm.delegate.virtualMachine(vm, didRequestSizeFor: value)
 }
 
-func bridgeClone(_ vmPointer: OpaquePointer?, objptr: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
-    guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
-    let obj = GSObject(ref: objptr!, vm: vm)
-    return vm.delegate.virtalMachine(vm, didRequestCloneFor: obj).ref
+func bridgeClone(
+    vmPointer: OpaquePointer!,
+    objptr: UnsafeMutableRawPointer?
+) -> UnsafeMutableRawPointer? {
+    guard let vm = GravityVirtualMachine.getVM(vmPointer) else { fatalError("Cannot found Virtual Machine") }
+    let value = GSValue(object: objptr, in: vm)
+    let clonedValue = vm.delegate.virtalMachine(vm, didRequestCloneFor: value)
+    
+    fatalError()
+//    return UnsafeMutableRawPointer(
 }
 
-func bridgeString(_ vmPointer: OpaquePointer?, xdata: UnsafeMutableRawPointer?, length: UnsafeMutablePointer<UInt32>?) -> UnsafePointer<CChar>? {
-    guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
+/// get description from object xdata
+func bridgeString(
+    vmPointer: OpaquePointer!,
+    xdata: UnsafeMutableRawPointer?,
+    length: UnsafeMutablePointer<UInt32>?
+) -> UnsafePointer<CChar>? {
+    guard let vm = GravityVirtualMachine.getVM(vmPointer) else { fatalError("Cannot found Virtual Machine") }
     let string = vm.delegate.virtualMachine(vm, didRequestStringWith: length!.pointee, data: xdata)
     return string.toPointer()
 }
 
-func bridgeEquals(_ vmPointer: OpaquePointer?, lhsPtr: UnsafeMutableRawPointer?, rhsPtr: UnsafeMutableRawPointer?) -> Bool {
-    guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
-    return vm.delegate.virtualMachineBridgeEquals(vm, lhsObject: GSObject(ref: lhsPtr!, vm: vm), rhsObject: GSObject(ref: rhsPtr!, vm: vm))
+func bridgeEquals(
+    vmPointer: OpaquePointer!,
+    lhsPtr: UnsafeMutableRawPointer?,
+    rhsPtr: UnsafeMutableRawPointer?
+) -> Bool {
+    guard let vm = GravityVirtualMachine.getVM(vmPointer) else { fatalError("Cannot found Virtual Machine") }
+    return vm.delegate.virtualMachineBridgeEquals(vm, lhsValue: GSValue(object: lhsPtr, in: vm), rhsValue: GSValue(object: lhsPtr, in: vm))
 }
 
 func bridgeInitInstance(
-    _ vmPointer: OpaquePointer?,
+    _ vmPointer: OpaquePointer!,
     xdata: UnsafeMutableRawPointer?,
     ctx: gravity_value_t,
     instance: UnsafeMutablePointer<gravity_instance_t>?,
     args: UnsafeMutablePointer<gravity_value_t>?,
     argsCount: Int16
 ) -> Bool {
+    guard let vm = GravityVirtualMachine.getVM(vmPointer) else { fatalError("Cannot found Virtual Machine") }
+    
+    // first arg
+    let arguments: [GSValue] = (1..<argsCount).map { index in
+        let arg = args![Int(index)]
+        return GSValue(object: arg, in: vm)
+    }
+    
+    let method = Unmanaged<MethodDescriptor>.fromOpaque(xdata!).takeUnretainedValue()
+    
+    if arguments.count > method.argsCount {
+        return GravityReturn.error("Passed more arguments, then expected. Method \(method.name) expected \(method.argsCount) arguments, but passed \(arguments.count) arguments.", vm: vm)
+    }
+    
+    guard let object = method.callStatic(with: arguments) as? AnyObject else {
+        return GravityReturn.error("Return value of init supports only reference types.", vm: vm)
+    }
+    
+    let value = Unmanaged.passRetained(object).toOpaque()
+    gravity_instance_setxdata(instance, value)
+    
+    return GravityReturn.noValue()
+}
+
+private func bridgeExecute(
+    vmPointer: OpaquePointer?,
+    data: UnsafeMutableRawPointer?, // always return method descriptor
+    ctx: gravity_value_t,
+    args: UnsafeMutablePointer<gravity_value_t>!,
+    argsCount: Int16,
+    rIndex: UInt32
+) -> Bool {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
-    return vm.delegate.virtualMachine(vm, didInitObjectIn: ctx, instance: instance, arguments: [], argumentsCount: argsCount, data: xdata)
+    
+    guard let methodDescRef = data else {
+        return GravityReturn.error("Required xdata not passed", vm: vm)
+    }
+    
+    var arguments: [GSValue] = (0..<argsCount).map { index in
+        let value = args[Int(index)]
+        return GSValue(object: value, in: vm)
+    }
+    
+    // First value always contains instance
+    let callee = arguments.removeFirst()
+    
+    let method = Unmanaged<MethodDescriptor>.fromOpaque(methodDescRef).takeUnretainedValue()
+    
+    if arguments.count > method.argsCount {
+        return GravityReturn.error("Passed more arguments, then expected. Method \(method.name) expected \(method.argsCount) arguments, but passed \(arguments.count) arguments.", vm: vm)
+    }
+    
+    if callee.xData == nil {
+        return GravityReturn.error("Instance don't have any ref to allocated object.", vm: vm)
+    }
+    
+    let value = method.call(in: callee, with: arguments)
+    
+    if value is Void {
+        return GravityReturn.noValue()
+    } else {
+        return GravityReturn.value(GSValue(object: value, in: vm), rIndex: Int32(rIndex), vm: vm)
+    }
+ 
+//
+//    let classIdentifier = String(cString: instance.pointee.identifier)
+//    let object = GSValue(object: instance, in: virtualMachine)
+//    let methodName = methodNameValue.toString
+//
+//    guard let desc = virtualMachine.getClassDescriptor(for: classIdentifier) else {
+//        return gravity_return_error(vm, Int32(rIndex), "Can't find class descriptor for identifier - \(classIdentifier).")
+//    }
+//
+//    // first two indecies always contains instance information and method name
+//    let args: [GSValue] = (2..<nargs).map { index in
+//        let value = args[Int(index)]
+//        return GSValue(value: value, vm: virtualMachine)
+//    }
+//
+//    guard let method = desc.methodDescriptions.first(where: { $0.name == methodName }) else {
+//        return gravity_return_error(vm, Int32(rIndex), "Can't find method constructor")
+//    }
+//
+//    virtualMachine.setGCEnabled(false)
+//    defer { virtualMachine.setGCEnabled(true) }
+//
+//    let result = method.call(in: object, with: args)
+//
+//    if result is Void {
+//        return gravity_return_no_value()
+//    } else {
+//        let returnValue = GSValue(object: result, in: virtualMachine)
+//        return gravity_return_value(vm, returnValue.value, Int32(rIndex))
+//    }
 }
 
 func bridgeSetValue(
-    _ vmPointer: OpaquePointer?,
+    vmPointer: OpaquePointer!,
     xdata: UnsafeMutableRawPointer?,
     target: gravity_value_t,
     key: UnsafePointer<CChar>?,
     value: gravity_value_t
 ) -> Bool {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
+    
+    let value = GSValue(object: value, in: vm)
+    let target = GSValue(object: target, in: vm)
+    
     return vm.delegate.virtualMachine(vm, didSetValue: value, in: target, forKey: String(cString: key!))
 }
 
 func bridgeSetUndefValue(
-    _ vmPointer: OpaquePointer?,
+    vmPointer: OpaquePointer!,
     xdata: UnsafeMutableRawPointer?,
     target: gravity_value_t,
     key: UnsafePointer<CChar>?,
     value: gravity_value_t
 ) -> Bool {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
+    
+    let value = GSValue(object: value, in: vm)
+    let target = GSValue(object: target, in: vm)
+    
     return vm.delegate.virtualMachine(vm, didSetUndefValue: value, in: target, forKey: String(cString: key!))
 }
 
 func bridgeGetValue(
-    _ vmPointer: OpaquePointer?,
+    vmPointer: OpaquePointer!,
     xdata: UnsafeMutableRawPointer?,
     target: gravity_value_t,
     key: UnsafePointer<CChar>?,
     vindex: UInt32
 ) -> Bool {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
+    
+    let target = GSValue(object: target, in: vm)
+    
     return vm.delegate.virtualMachine(vm, didGetValueFrom: target, forKey: String(cString: key!), vIndex: vindex)
 }
-
 
 func bridgeGetUndefValue(
     _ vmPointer: OpaquePointer?,
@@ -365,29 +448,9 @@ func bridgeGetUndefValue(
     vindex: UInt32
 ) -> Bool {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
+    
+    let target = GSValue(object: target, in: vm)
+    
     return vm.delegate.virtualMachine(vm, didGetUndefValueFrom: target, forKey: String(cString: key!), vIndex: vindex)
-}
-
-public class GSInstance {
-    
-    var instance: UnsafeMutablePointer<gravity_instance_t>?
-    
-    init?<T>(for object: inout T, in vm: GravityVirtualMachine) {
-        let clazz = vm.getOrRegisterClass(T.self)
-        let instance = gravity_instance_new(vm.vmPtr, clazz)
-        gravity_instance_setxdata(instance, &object)
-        
-        self.instance = instance
-    }
-    
-//    init<T>(for type: T.Type, in vm: GravityVirtualMachine) {
-//        let clazz = vm.getOrRegisterClass(T.self)
-//        
-//        self.instance = instance
-//    }
-    
-    deinit {
-        print("kek")
-    }
 }
 
