@@ -53,7 +53,6 @@ public final class _GravityExportClassEncoderContainer<T: GSExportable>: Gravity
             let narg = method.argsCount > 0 ? "\(method.argsCount)" : ""
             let name = CLASS_INTERNAL_INIT_NAME + narg
             
-//            CLASS_INTERNAL_INIT_NAME = "$init"
 //            GRAVITY_INTERNAL_EXEC_NAME = "exec"
             name.withCString { ptr in
                 gravity_class_bind(clazz, ptr, closureValue)
@@ -67,7 +66,6 @@ public final class _GravityExportClassEncoderContainer<T: GSExportable>: Gravity
         
         self.descriptor.addMethod(method)
     }
-    
 }
 
 //private func bridgeExecConstructor(vm: OpaquePointer!, args: UnsafeMutablePointer<gravity_value_t>!, nargs: UInt16, rIndex: UInt32) -> Bool {

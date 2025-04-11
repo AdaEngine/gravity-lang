@@ -80,15 +80,13 @@ public final class GravityVirtualMachine {
     
     @discardableResult
     public func execute(
-        binary: UnsafeMutablePointer<gravity_closure_t>!,
+        closure: UnsafeMutablePointer<gravity_closure_t>!,
         sender: GSValue? = nil,
         params: [GSValue] = []
     ) -> GSValue? {
-        
         var args = params.map { $0.value }
         let sender = (sender ?? GSValue(nullIn: self)).value
-        
-        let runResult = gravity_vm_runclosure(self.vmPtr, binary, sender, &args, UInt16(args.count))
+        let runResult = gravity_vm_runclosure(self.vmPtr, closure, sender, &args, UInt16(args.count))
         
         if runResult {
             let result = gravity_vm_result(self.vmPtr)
@@ -98,9 +96,28 @@ public final class GravityVirtualMachine {
         return nil
     }
     
+    public func loadClosure(
+        closure: UnsafeMutablePointer<gravity_closure_t>!
+    ) {
+        gravity_vm_loadclosure(self.vmPtr, closure)
+    }
+    
     /// Off/On Garbage Collector
     public func setGCEnabled(_ isEnabled: Bool) {
         gravity_gc_setenabled(self.vmPtr, isEnabled)
+    }
+    
+    public func getTime() -> Double {
+        gravity_vm_time(self.vmPtr)
+    }
+    
+    public func reset() {
+        gravity_vm_reset(self.vmPtr)
+    }
+    
+    public func getResult() -> GSValue {
+        let value = gravity_vm_result(self.vmPtr)
+        return GSValue(value: value, in: self)
     }
 }
 
@@ -112,8 +129,8 @@ public extension GravityVirtualMachine {
         
         let encoder = GravityExportEncoder(vm: self)
         try! type.export(in: encoder)
-        // Collect all descriptors
         
+        // Collect all descriptors
         let descriptors = encoder.classDescriptors
         
         for descriptor in descriptors {
@@ -172,11 +189,8 @@ extension GravityVirtualMachine {
 }
 
 extension GravityVirtualMachine {
-    
     func getOrRegisterClass<T>(_ type: T.Type) -> UnsafeMutablePointer<gravity_class_t> {
-        
         let string = String(describing: type)
-        
         if let clazz = self.registredClass[string] {
             return clazz
         }
@@ -192,13 +206,11 @@ extension GravityVirtualMachine {
         }
         
         self.registredClass[string] = clazz
-        
         return clazz!
     }
 }
 
 extension String {
-    
     func toPointer() -> UnsafePointer<CChar>? {
         guard let data = self.data(using: .utf8) else { return nil }
         
@@ -239,12 +251,8 @@ func bridgeFree(_ vmPointer: OpaquePointer?, objptr: UnsafeMutablePointer<gravit
         return
     }
     
-    
-    
-    
-    
-//    let value = GSValue(object: objptr, in: vm)
-//    vm.delegate.virtualMachine(vm, didRequestFree: value)
+    let value = GSValue(object: objptr, in: vm)
+    vm.delegate.virtualMachine(vm, didRequestFree: value)
 }
 
 func bridgeSize(_ vmPointer: OpaquePointer?, objptr: UnsafeMutablePointer<gravity_object_t>?) -> UInt32 {

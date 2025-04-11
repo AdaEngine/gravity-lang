@@ -11,7 +11,7 @@ import CGravity
 /// You can create your GSValue and pass it to virtual machine, or cast given to valid format.
 public class GSValue {
     
-    internal private(set) var value: gravity_value_t
+    public private(set) var value: gravity_value_t
     unowned let vm: GravityVirtualMachine
     
     public init(value: gravity_value_t, in vm: GravityVirtualMachine) {
@@ -78,23 +78,14 @@ public extension GSValue {
             self.init(double: double, in: vm)
         } else if let bool = object as? Bool {
             self.init(boolean: bool, in: vm)
-        } else if let exportType = object as? GSExportable {
-            
-            fatalError()
+        } else if var exportType = object as? GSExportable & AnyObject {
+            self.init(value: &exportType, in: vm)
         } else if let value = object as? gravity_value_t {
             self.init(value: value, in: vm)
         } else if let gravityObject = object as? UnsafeMutablePointer<gravity_object_t> {
             let value = gravity_value_from_object(gravityObject)
             self.init(value: value, in: vm)
         } else {
-//            var instance = object
-//            if let obj = GSInstance(for: &instance, in: vm) {
-//                vm.setInstance(obj)
-//                let value = gravity_value_from_object(obj.instance)
-//                self.init(value: value, vm: vm)
-//                return
-//            }
-            
             self.init(undefinedIn: vm)
         }
     }
@@ -104,6 +95,16 @@ public extension GSValue {
         let list = gravity_list_new(vm.vmPtr, UInt32(length))
         let value = gravity_value_from_object(list)
         self.init(value: value, in: vm)
+    }
+    
+    convenience init<T: GSExportable & AnyObject>(value: inout T, in vm: GravityVirtualMachine) {
+        if let instance = value.instance, let value = instance.value?.value {
+            self.init(value: value, in: vm)
+        } else {
+            let instance = GSIntstance(object: value, vm: vm)
+            value.instance = instance
+            self.init(value: instance.value!.value, in: vm)
+        }
     }
     
     /// Create a new map in virtual machine memory with given length.
@@ -168,50 +169,58 @@ public extension GSValue {
         return range.from...range.to
     }
     
+    var toInstance: GSIntstance? {
+        guard isInstance else {
+            return nil
+        }
+        
+        return GSIntstance(value: self)
+    }
+    
+    var toClass: GSValue {
+        guard let isa = self.value.isa else {
+            return GSValue(undefinedIn: vm)
+        }
+        
+        let value = gravity_value_from_object(isa)
+        return GSValue(value: value, in: vm)
+    }
+    
     // TODO: Currently not work with Range/List/Map
     func toObjectOf<T>(_ type: T.Type) -> T? {
-        
         if type == String.self {
             return self.toString as? T
         }
-        
         if type == Int.self {
             return Int(self.toInteger) as? T
         }
-        
         if type == Int32.self {
             return Int32(self.toInteger) as? T
         }
-        
         if type == Int16.self {
             return Int16(self.toInteger) as? T
         }
-        
         if type == Int8.self {
             return Int8(self.toInteger) as? T
         }
-        
         if type == Int8.self {
             return Int8(self.toInteger) as? T
         }
-        
         if type == UInt8.self {
             return UInt8(self.toInteger) as? T
         }
-        
         if type == UInt16.self {
             return UInt16(self.toInteger) as? T
         }
-        
         if type == UInt32.self {
             return UInt32(self.toInteger) as? T
         }
-        
         if type == Double.self {
             return self.toDouble as? T
         }
         
-        // Extra data always contains reference to an object, and we should work with it as AnyObject, but cast to T. With that hack we can support both value and reference types.
+        // Extra data always contains reference to an object, and we should work with it as AnyObject, but cast to T.
+        // With that hack we can support both value and reference types.
         guard let xdata = xData else { return nil }
         // We use unretained value, because we will release it later in bridge_free function.
         return Unmanaged<AnyObject>.fromOpaque(xdata).takeUnretainedValue() as? T
@@ -303,7 +312,6 @@ public extension GSValue {
         let value = gravity_value_from_object(prop)
         
         return gravity_value_isa_valid(value)
-        
     }
 }
 
@@ -324,7 +332,7 @@ public extension GSValue {
         let closure = gravity_cast_value_as_closure(self.value)
         let arguments = args.map { GSValue(object: $0, in: self.vm) }
         
-        return self.vm.execute(binary: closure, sender: self, params: arguments)
+        return self.vm.execute(closure: closure, sender: self, params: arguments)
     }
     
     // Not sure that is works
@@ -332,7 +340,14 @@ public extension GSValue {
         let closure = gravity_cast_value_as_closure(self.value)
         let arguments = args.map { GSValue(object: $0, in: self.vm) }
         
-        return self.vm.execute(binary: closure, sender: nil, params: arguments)
+        return self.vm.execute(closure: closure, sender: nil, params: arguments)
+    }
+    
+    func callAsFunction(_ args: Any...) -> GSValue? {
+        let closure = gravity_cast_value_as_closure(self.value)
+        let arguments = args.map { GSValue(object: $0, in: self.vm) }
+        
+        return self.vm.execute(closure: closure, sender: nil, params: arguments)
     }
 }
 
@@ -417,5 +432,36 @@ public extension GSValue {
     
     var isObject: Bool {
         return gravity_value_isobject(self.value)
+    }
+}
+
+public final class GSIntstance {
+    
+    weak var instance: AnyObject?
+    public private(set) var value: GSValue?
+    unowned let vm: GravityVirtualMachine
+    
+    public convenience init<T: GSExportable & AnyObject>(object: T, vm: GravityVirtualMachine) {
+        let clazz = vm.getOrRegisterClass(T.self)
+        let instance = gravity_instance_new(vm.vmPtr, clazz)
+        let unmanaged = Unmanaged<T>.passUnretained(object).toOpaque()
+        gravity_instance_setxdata(instance, unmanaged)
+        let value = gravity_value_from_object(instance)
+        self.init(value: value, in: vm)
+    }
+    
+    public convenience init(value: gravity_value_t, in vm: GravityVirtualMachine) {
+        self.init(value: GSValue(value: value, in: vm))
+    }
+    
+    public init(value: GSValue) {
+        self.value = value
+        self.vm = value.vm
+    }
+    
+    deinit {
+        if let value = instance {
+            Unmanaged.passUnretained(value).release()
+        }
     }
 }

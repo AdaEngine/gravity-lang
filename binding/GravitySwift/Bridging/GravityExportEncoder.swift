@@ -19,7 +19,6 @@ public final class GravityExportEncoder {
     }
     
     public func makeContainer<T: GSExportable>(for type: T.Type, named name: String) throws -> GravityExportClassEncoderContainer {
-        
         let clazz = name.withCString { ptr in
             return gravity_class_new_pair(self.vm.vmPtr, ptr, nil, 0, 0)!
         }
