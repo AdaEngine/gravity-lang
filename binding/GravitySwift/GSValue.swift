@@ -98,13 +98,14 @@ public extension GSValue {
     }
     
     convenience init<T: GSExportable & AnyObject>(value: inout T, in vm: GravityVirtualMachine) {
-        if let instance = value.instance, let value = instance.value?.value {
-            self.init(value: value, in: vm)
-        } else {
-            let instance = GSIntstance(object: value, vm: vm)
-            value.instance = instance
-            self.init(value: instance.value!.value, in: vm)
-        }
+//        if let instance = value.instance, let value = instance.value?.value {
+//            self.init(value: value, in: vm)
+//        } else {
+//            let instance = GSIntstance(object: value, vm: vm)
+//            value.instance = instance
+//            self.init(value: instance.value!.value, in: vm)
+//        }
+        fatalError()
     }
     
     /// Create a new map in virtual machine memory with given length.

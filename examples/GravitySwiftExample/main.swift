@@ -6,7 +6,6 @@
 //
 
 import Gravity
-import CGravity
 import Foundation
 
 class GVMDelegateImpl: GravityVirtualMachineDelegate {
@@ -78,7 +77,8 @@ let sourceCode = try String(contentsOfFile: sourceCodePath)
 
 let vm = GravityVirtualMachine(settings: settings, delegate: vmDelegate)
 
-class SwiftObject: GSExportable {
+@GSExportable
+class SwiftObject: @unchecked Sendable {
     init() {
         print("SwiftObject Init")
     }
@@ -99,17 +99,34 @@ class SwiftObject: GSExportable {
     
     // MARK: GSExportable
     
-    static func export(in encoder: GravityExportEncoder) throws {
-        let container = try encoder.makeContainer(for: SwiftObject.self, named: "SwiftObject")
-        container.bind(.constructor(SwiftObject.init))
-        container.bind(.method(SwiftObject.debug(_:), named: "debug"))
-        container.bind(.method(SwiftObject.printKek, named: "printKek"))
-        
-        container.bind(.property(\SwiftObject.text, named: "text"))
-        container.bind(.property(\SwiftObject.random, named: "random"))
-    }
+//    static func export(in encoder: GravityExportEncoder) throws {
+//        let container = try encoder.makeContainer(for: SwiftObject.self, named: "SwiftObject")
+//        container.bind(.constructor(SwiftObject.init))
+//        container.bind(.method(SwiftObject.debug(_:), named: "debug"))
+//        container.bind(.method(SwiftObject.printKek, named: "printKek"))
+//        
+//        container.bind(.property(\SwiftObject.text, named: "text"))
+//        container.bind(.property(\SwiftObject.random, named: "random"))
+//    }
 }
 
+@GSExportable("MyCustomObject")
+class KekObject: @unchecked Sendable {
+    
+    var text: String = ""
+    
+    init() {
+        print("KekObject Init")
+    }
+    
+    func printKek() {
+        
+    }
+    
+    static func keeeek() {
+        
+    }
+}
 
 let compiler = GravityCompiler()
 let binary = compiler.compile(source: sourceCode)

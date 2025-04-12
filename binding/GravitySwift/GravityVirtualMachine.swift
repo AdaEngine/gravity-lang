@@ -32,7 +32,7 @@ public final class GravityVirtualMachine {
     
     private var registredClass: [String: UnsafeMutablePointer<gravity_class_t>] = [:]
     
-    internal private(set) var vmPtr: OpaquePointer
+    internal let vmPtr: OpaquePointer
     
     private var vmDelegate: gravity_delegate_t
     
@@ -173,17 +173,17 @@ extension GravityVirtualMachine {
 }
 
 extension GravityVirtualMachine {
-    private static var virtualMachines: [GravityVirtualMachine] = []
+    nonisolated(unsafe) private static var virtualMachines: [GravityVirtualMachine] = []
     
-    static func getVM(_ pointer: OpaquePointer) -> GravityVirtualMachine? {
+    nonisolated static func getVM(_ pointer: OpaquePointer) -> GravityVirtualMachine? {
         self.virtualMachines.first(where: { $0.vmPtr == pointer })
     }
     
-    static func register(_ vm: GravityVirtualMachine) {
+    nonisolated static func register(_ vm: GravityVirtualMachine) {
         self.virtualMachines.append(vm)
     }
     
-    static func unregister(_ vm: GravityVirtualMachine) {
+    nonisolated static func unregister(_ vm: GravityVirtualMachine) {
         self.virtualMachines.removeAll(where: { $0.vmPtr == vm.vmPtr })
     }
 }
@@ -228,16 +228,19 @@ extension String {
     }
 }
 
+@MainActor
 func logCallback(_ vmPointer: OpaquePointer?, message: UnsafePointer<CChar>?, xdata: UnsafeMutableRawPointer?) {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
     vm.delegate.virtualMachineDidReciveLog(vm, message: String(cString: message!), data: xdata)
 }
 
+@MainActor
 func logClear(_ vmPointer: OpaquePointer?, xdata: UnsafeMutableRawPointer?) {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
     vm.delegate.virtualMachineDidClearLog(vm, data: xdata)
 }
 
+@MainActor
 func errorCallback(_ vmPointer: OpaquePointer?, errType: error_type_t, message: UnsafePointer<CChar>!, errDesc: error_desc_t, xdata: UnsafeMutableRawPointer?) {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
     print("Error!", String(cString: message))

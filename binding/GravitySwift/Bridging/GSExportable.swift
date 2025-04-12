@@ -8,8 +8,5 @@
 /// Base protocol to collection information about class or struct.
 /// You can define class name, methods and static methods which called from Gravity Script.
 public protocol GSExportable {
-    
-    var instance: GSIntstance? { get set }
-    
     static func export(in encoder: GravityExportEncoder) throws
 }
