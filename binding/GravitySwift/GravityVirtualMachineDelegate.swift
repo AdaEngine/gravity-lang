@@ -35,23 +35,29 @@ public protocol GravityVirtualMachineDelegate: AnyObject {
     func virtualMachine(
         _ virtualMachine: GravityVirtualMachine,
         didGetValueFrom target: GSValue,
-        forKey: String,
-        vIndex: UInt32
-    ) -> Bool
+        forKey key: String
+    ) throws -> GSValue?
     
     func virtualMachine(
         _ virtualMachine: GravityVirtualMachine,
+        xdata: UnsafeMutableRawPointer?,
         didSetUndefValue value: GSValue,
         in target: GSValue,
         forKey key: String
     ) -> Bool
     
+    /// - Parameter virtualMachine: Current virtual machine
+    /// - Parameter xdata: Instance object if exists
+    /// - Parameter didGetUndefValueFrom: target
+    /// - Parameter forKey: identifier key
+    /// - Parameter vIndex: index in register
+    /// - Returns: true if you find a value, or false if not.
     func virtualMachine(
         _ virtualMachine: GravityVirtualMachine,
+        xdata: UnsafeMutableRawPointer?,
         didGetUndefValueFrom target: GSValue,
-        forKey: String,
-        vIndex: UInt32
-    ) -> Bool
+        forKey key: String
+    ) throws -> GSValue?
     
     // MARK: Memory managment
     

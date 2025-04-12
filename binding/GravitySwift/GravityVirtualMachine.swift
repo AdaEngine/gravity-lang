@@ -30,8 +30,6 @@ public final class GravityVirtualMachine {
     
     unowned let delegate: GravityVirtualMachineDelegate
     
-    private var registredClass: [String: UnsafeMutablePointer<gravity_class_t>] = [:]
-    
     internal let vmPtr: OpaquePointer
     
     private var vmDelegate: gravity_delegate_t
@@ -124,11 +122,11 @@ public final class GravityVirtualMachine {
 // MARK: - Bridging
 
 public extension GravityVirtualMachine {
-    func bindClass<T: GSExportable>(with type: T.Type) {
+    func bindClass<T: GSExportable>(with type: T.Type) throws {
         self.setGCEnabled(false)
         
         let encoder = GravityExportEncoder(vm: self)
-        try! type.export(in: encoder)
+        try type.export(in: encoder)
         
         // Collect all descriptors
         let descriptors = encoder.classDescriptors
@@ -189,13 +187,14 @@ extension GravityVirtualMachine {
 }
 
 extension GravityVirtualMachine {
-    func getOrRegisterClass<T>(_ type: T.Type) -> UnsafeMutablePointer<gravity_class_t> {
-        let string = String(describing: type)
-        if let clazz = self.registredClass[string] {
-            return clazz
+    func getOrRegisterClass<T: GSExportable>(_ type: T.Type) -> UnsafeMutablePointer<gravity_class_t> {
+        let clazzName = self.getValue(forKey: T.runtimeName)
+        
+        if clazzName.isClass {
+            return clazzName.toGravityClass
         }
         
-        let clazz = string.withCString { ptr in
+        let clazz = T.runtimeName.withCString { ptr in
             return gravity_class_new_pair(
                 self.vmPtr, // vm
                 ptr, // name
@@ -205,7 +204,6 @@ extension GravityVirtualMachine {
             )
         }
         
-        self.registredClass[string] = clazz
         return clazz!
     }
 }
@@ -350,7 +348,6 @@ private func bridgeExecute(
     
     // First value always contains instance
     let callee = arguments.removeFirst()
-    
     let method = Unmanaged<MethodDescriptor>.fromOpaque(methodDescRef).takeUnretainedValue()
     
     if arguments.count > method.argsCount {
@@ -409,7 +406,7 @@ func bridgeSetUndefValue(
     let value = GSValue(object: value, in: vm)
     let target = GSValue(object: target, in: vm)
     
-    return vm.delegate.virtualMachine(vm, didSetUndefValue: value, in: target, forKey: String(cString: key!))
+    return vm.delegate.virtualMachine(vm, xdata: xdata, didSetUndefValue: value, in: target, forKey: String(cString: key!))
 }
 
 func bridgeGetValue(
@@ -441,9 +438,14 @@ func bridgeGetUndefValue(
     vindex: UInt32
 ) -> Bool {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
-    
     let target = GSValue(object: target, in: vm)
-    
-    return vm.delegate.virtualMachine(vm, didGetUndefValueFrom: target, forKey: String(cString: key!), vIndex: vindex)
+    do {
+        if let value = try vm.delegate.virtualMachine(vm, xdata: xdata, didGetUndefValueFrom: target, forKey: String(cString: key!)) {
+            return GravityReturn.value(value, rIndex: Int32(vindex), vm: vm)
+        }
+        return GravityReturn.noValue()
+    } catch {
+        return GravityReturn.error(error.localizedDescription, rIndex: Int32(vindex), vm: vm)
+    }
 }
 

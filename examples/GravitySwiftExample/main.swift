@@ -9,6 +9,23 @@ import Gravity
 import Foundation
 
 class GVMDelegateImpl: GravityVirtualMachineDelegate {
+    func virtualMachine(_ virtualMachine: Gravity.GravityVirtualMachine, didGetValueFrom target: Gravity.GSValue, forKey: String) throws -> Gravity.GSValue? {
+        return nil
+    }
+    
+    func virtualMachine(_ virtualMachine: Gravity.GravityVirtualMachine, xdata: UnsafeMutableRawPointer?, didSetUndefValue value: Gravity.GSValue, in target: Gravity.GSValue, forKey key: String) -> Bool {
+        return false
+    }
+    
+    func virtualMachine(
+        _ virtualMachine: Gravity.GravityVirtualMachine,
+        xdata: UnsafeMutableRawPointer?,
+        didGetUndefValueFrom target: Gravity.GSValue,
+        forKey key: String
+    ) throws -> Gravity.GSValue? {
+        return nil
+    }
+    
     func virtualMachineDidReciveLog(_ virtualMachine: GravityVirtualMachine, message: String, data: UnsafeMutableRawPointer?) {
         print(message)
     }
@@ -33,18 +50,6 @@ class GVMDelegateImpl: GravityVirtualMachineDelegate {
         return false
     }
     
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didGetValueFrom target: GSValue, forKey: String, vIndex: UInt32) -> Bool {
-        return false
-    }
-    
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didSetUndefValue value: GSValue, in target: GSValue, forKey key: String) -> Bool {
-        return false
-    }
-    
-    func virtualMachine(_ virtualMachine: GravityVirtualMachine, didGetUndefValueFrom target: GSValue, forKey: String, vIndex: UInt32) -> Bool {
-        return false
-    }
-    
     func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestStringWith length: UInt32, data: UnsafeMutableRawPointer?) -> String {
         return ""
     }
@@ -60,8 +65,6 @@ class GVMDelegateImpl: GravityVirtualMachineDelegate {
     func virtualMachine(_ virtualMachine: GravityVirtualMachine, didInitObjectIn ctx: GSValue, instance: UnsafeMutablePointer<gravity_instance_t>?, arguments: [GSValue], argumentsCount: Int16, data: UnsafeMutableRawPointer?) -> Bool {
         return false
     }
-    
-  
 }
 
 let vmDelegate = GVMDelegateImpl()
@@ -96,36 +99,6 @@ class SwiftObject: @unchecked Sendable {
     func debug(_ value: Int) -> String {
         return "Debug value is \(value)"
     }
-    
-    // MARK: GSExportable
-    
-//    static func export(in encoder: GravityExportEncoder) throws {
-//        let container = try encoder.makeContainer(for: SwiftObject.self, named: "SwiftObject")
-//        container.bind(.constructor(SwiftObject.init))
-//        container.bind(.method(SwiftObject.debug(_:), named: "debug"))
-//        container.bind(.method(SwiftObject.printKek, named: "printKek"))
-//        
-//        container.bind(.property(\SwiftObject.text, named: "text"))
-//        container.bind(.property(\SwiftObject.random, named: "random"))
-//    }
-}
-
-@GSExportable("MyCustomObject")
-class KekObject: @unchecked Sendable {
-    
-    var text: String = ""
-    
-    init() {
-        print("KekObject Init")
-    }
-    
-    func printKek() {
-        
-    }
-    
-    static func keeeek() {
-        
-    }
 }
 
 let compiler = GravityCompiler()
@@ -133,7 +106,8 @@ let binary = compiler.compile(source: sourceCode)
 
 compiler.transferMem(to: vm)
 
-vm.bindClass(with: SwiftObject.self)
+try! vm.bindClass(with: SwiftObject.self)
+vm.setValue(SwiftObject(), forKey: "sw")
 
 let res = vm.executeMain(for: binary)
 

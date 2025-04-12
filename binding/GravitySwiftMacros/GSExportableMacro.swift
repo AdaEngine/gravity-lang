@@ -88,8 +88,12 @@ public struct GSExportableMacro: ExtensionMacro {
         let extensionDecl = try ExtensionDeclSyntax(
             """
             extension \(raw: typeName): Gravity.GSExportable {
+                static var runtimeName: String {
+                    return "\(raw: customName)"
+                }
+
                 static func export(in encoder: Gravity.GravityExportEncoder) throws {
-                    let container = try encoder.makeContainer(for: \(raw: typeName).self, named: "\(raw: customName)")
+                    let container = try encoder.makeContainer(for: \(raw: typeName).self)
                     \(raw: allBinds.joined(separator: "\n    "))
                 }
             }

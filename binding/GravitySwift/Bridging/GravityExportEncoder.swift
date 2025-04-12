@@ -18,14 +18,12 @@ public final class GravityExportEncoder {
         self.vm = vm
     }
     
-    public func makeContainer<T: GSExportable>(for type: T.Type, named name: String) throws -> GravityExportClassEncoderContainer {
-        let clazz = name.withCString { ptr in
-            return gravity_class_new_pair(self.vm.vmPtr, ptr, nil, 0, 0)!
-        }
+    public func makeContainer<T: GSExportable>(for type: T.Type) throws -> GravityExportClassEncoderContainer {
+        let clazz = self.vm.getOrRegisterClass(type)
         
         let classDescriptor = GravityBridgeClassDescriptor(
             vm: self.vm,
-            registredName: name,
+            registredName: T.runtimeName,
             gClass: clazz,
             type: type
         )

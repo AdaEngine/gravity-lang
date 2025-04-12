@@ -78,8 +78,8 @@ public extension GSValue {
             self.init(double: double, in: vm)
         } else if let bool = object as? Bool {
             self.init(boolean: bool, in: vm)
-        } else if var exportType = object as? GSExportable & AnyObject {
-            self.init(value: &exportType, in: vm)
+        } else if let exportType = object as? GSExportable & AnyObject {
+            self.init(value: exportType, in: vm)
         } else if let value = object as? gravity_value_t {
             self.init(value: value, in: vm)
         } else if let gravityObject = object as? UnsafeMutablePointer<gravity_object_t> {
@@ -97,15 +97,9 @@ public extension GSValue {
         self.init(value: value, in: vm)
     }
     
-    convenience init<T: GSExportable & AnyObject>(value: inout T, in vm: GravityVirtualMachine) {
-//        if let instance = value.instance, let value = instance.value?.value {
-//            self.init(value: value, in: vm)
-//        } else {
-//            let instance = GSIntstance(object: value, vm: vm)
-//            value.instance = instance
-//            self.init(value: instance.value!.value, in: vm)
-//        }
-        fatalError()
+    convenience init<T: GSExportable & AnyObject>(value: T, in vm: GravityVirtualMachine) {
+        let instance = GSIntstance(object: value, vm: vm)
+        self.init(value: instance.value!.value, in: vm)
     }
     
     /// Create a new map in virtual machine memory with given length.
@@ -133,7 +127,7 @@ public extension GSValue {
 public extension GSValue {
     var toString: String {
         guard !self.isString else {
-            return String(cString: gravity_cast_value_as_cString(self.value)!)
+            return String(cString: toGravityCString!)
         }
         
         let string = convert_value2string(self.vm.vmPtr, self.value)
@@ -153,20 +147,27 @@ public extension GSValue {
             return []
         }
         
-        let list = gravity_cast_value_as_list(self.value)
-        return []
+        let count = gravity_list_count(self.value)
+        var list = [GSValue]()
+        for index in 0..<count {
+            let element = gravity_list_get_value_at_index(self.value, Int32(index))
+            list.append(GSValue.init(value: element, in: vm))
+        }
+        
+        return list
     }
     
     var toBoolean: Bool {
         guard !self.isBool else {
             return gravity_cast_value_as_bool(self.value)
         }
+        
         let bool = convert_value2bool(self.vm.vmPtr, self.value)
         return gravity_cast_value_as_bool(bool)
     }
     
     var toRange: ClosedRange<Int64> {
-        let range = gravity_cast_value_as_range(self.value).pointee
+        let range = self.toGravityRange.pointee
         return range.from...range.to
     }
     
@@ -175,7 +176,15 @@ public extension GSValue {
             return nil
         }
         
-        return GSIntstance(value: self)
+        guard let data = self.xData else {
+            return nil
+        }
+        
+        return Unmanaged<GSIntstance>.fromOpaque(data).takeUnretainedValue()
+    }
+    
+    var toError: String {
+        String(cString: self.toGravityError!)
     }
     
     var toClass: GSValue {
@@ -223,6 +232,7 @@ public extension GSValue {
         // Extra data always contains reference to an object, and we should work with it as AnyObject, but cast to T.
         // With that hack we can support both value and reference types.
         guard let xdata = xData else { return nil }
+        
         // We use unretained value, because we will release it later in bridge_free function.
         return Unmanaged<AnyObject>.fromOpaque(xdata).takeUnretainedValue() as? T
     }
@@ -255,8 +265,7 @@ public extension GSValue {
             return false
         }
         
-        let instance = gravity_cast_value_as_instance(self.value)
-        
+        let instance = self.toGravityInstance
         let closure = name.withCString { ptr in
             gravity_instance_lookup_event(instance, name.toPointer())
         }
@@ -292,9 +301,8 @@ public extension GSValue {
         }
         
         let key = GSValue(string: name, in: self.vm).value
-        let instance = gravity_cast_value_as_instance(self.value)
+        let instance = self.toGravityInstance
         let value = gravity_instance_lookup_property(self.vm.vmPtr, instance, key)
-        
         return gravity_value_isa_valid(value)
     }
     
@@ -305,13 +313,12 @@ public extension GSValue {
         }
         
         let key = GSValue(string: name, in: self.vm).value
-        let clazz = gravity_cast_value_as_class(self.value)
+        let clazz = toGravityClass
         guard let prop = gravity_class_lookup(clazz, key) else {
             return false
-            
         }
-        let value = gravity_value_from_object(prop)
         
+        let value = gravity_value_from_object(prop)
         return gravity_value_isa_valid(value)
     }
 }
@@ -330,7 +337,7 @@ public extension GSValue {
             return nil
         }
         
-        let closure = gravity_cast_value_as_closure(self.value)
+        let closure = self.toGravityClosure
         let arguments = args.map { GSValue(object: $0, in: self.vm) }
         
         return self.vm.execute(closure: closure, sender: self, params: arguments)
@@ -338,14 +345,14 @@ public extension GSValue {
     
     // Not sure that is works
     func callConstructor(with args: [Any]) -> GSValue? {
-        let closure = gravity_cast_value_as_closure(self.value)
+        let closure = self.toGravityClosure
         let arguments = args.map { GSValue(object: $0, in: self.vm) }
         
         return self.vm.execute(closure: closure, sender: nil, params: arguments)
     }
     
     func callAsFunction(_ args: Any...) -> GSValue? {
-        let closure = gravity_cast_value_as_closure(self.value)
+        let closure = self.toGravityClosure
         let arguments = args.map { GSValue(object: $0, in: self.vm) }
         
         return self.vm.execute(closure: closure, sender: nil, params: arguments)
@@ -436,19 +443,75 @@ public extension GSValue {
     }
 }
 
-public final class GSIntstance {
+public extension GSValue {
+    @inline(__always)
+    var toGravityInstance: UnsafeMutablePointer<gravity_instance_t>! {
+        gravity_cast_value_as_instance(self.value)
+    }
     
-    weak var instance: AnyObject?
+    @inline(__always)
+    var toGravityClass: UnsafeMutablePointer<gravity_class_t>! {
+        gravity_cast_value_as_class(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityMap: UnsafeMutablePointer<gravity_map_t>! {
+        gravity_cast_value_as_map(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityRange: UnsafeMutablePointer<gravity_range_t>! {
+        gravity_cast_value_as_range(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityList: UnsafeMutablePointer<gravity_list_t>! {
+        gravity_cast_value_as_list(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityClosure: UnsafeMutablePointer<gravity_closure_t>! {
+        gravity_cast_value_as_closure(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityObject: UnsafeMutablePointer<gravity_object_t>! {
+        gravity_cast_value_as_object(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityInt: gravity_int_t {
+        gravity_cast_value_as_int(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityString: UnsafeMutablePointer<gravity_string_t>! {
+        gravity_cast_value_as_string(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityCString: UnsafePointer<CChar>? {
+        gravity_cast_value_as_cString(self.value)
+    }
+    
+    @inline(__always)
+    var toGravityError: UnsafePointer<CChar>? {
+        gravity_cast_value_as_error(self.value)
+    }
+}
+
+public final class GSIntstance {
     public private(set) var value: GSValue?
     unowned let vm: GravityVirtualMachine
     
+    // FIXME: Memory leak
     public convenience init<T: GSExportable & AnyObject>(object: T, vm: GravityVirtualMachine) {
         let clazz = vm.getOrRegisterClass(T.self)
         let instance = gravity_instance_new(vm.vmPtr, clazz)
-        let unmanaged = Unmanaged<T>.passUnretained(object).toOpaque()
-        gravity_instance_setxdata(instance, unmanaged)
         let value = gravity_value_from_object(instance)
         self.init(value: value, in: vm)
+        let unmanaged = Unmanaged.passRetained(object).toOpaque()
+        gravity_instance_setxdata(instance, unmanaged)
     }
     
     public convenience init(value: gravity_value_t, in vm: GravityVirtualMachine) {
@@ -458,11 +521,5 @@ public final class GSIntstance {
     public init(value: GSValue) {
         self.value = value
         self.vm = value.vm
-    }
-    
-    deinit {
-        if let value = instance {
-            Unmanaged.passUnretained(value).release()
-        }
     }
 }

@@ -10,5 +10,5 @@
 ///     // The export function will be automatically generated
 /// }
 /// ```
-@attached(extension, conformances: GSExportable, names: named(export))
+@attached(extension, conformances: GSExportable, names: named(export), named(runtimeName))
 public macro GSExportable(_ customObjectName: String? = nil) = #externalMacro(module: "GravitySwiftMacros", type: "GSExportableMacro")
