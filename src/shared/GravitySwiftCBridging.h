@@ -227,6 +227,10 @@ gravity_value_t gravity_list_get_value_at_index(gravity_value_t value, int index
     return LIST_VALUE_AT_INDEX(value, index);
 }
 
+void gravity_list_push_value(gravity_list_t* list, gravity_value_t value) {
+    marray_push(gravity_value_t, list->array, value);
+}
+
 // MARK: Internal
 
 gravity_function_t * new_function(void * fptr) {

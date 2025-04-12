@@ -38,10 +38,12 @@ public final class GravityVirtualMachine {
         var vmDelegate = gravity_delegate_t()
         vmDelegate.disable_gccheck_1 = settings.disableGarbageCollectorCheck
         vmDelegate.report_null_errors = settings.reportNullErrors
+        vmDelegate.optional_classes = bridgeOptionalClasses
         vmDelegate.bridge_clone = bridgeClone
         vmDelegate.bridge_free = bridgeFree
         vmDelegate.bridge_equals = bridgeEquals
         vmDelegate.bridge_string = bridgeString
+        vmDelegate.bridge_size = bridgeSize
         vmDelegate.bridge_initinstance = bridgeInitInstance
         vmDelegate.bridge_execute = bridgeExecute
         vmDelegate.bridge_setvalue = bridgeSetValue
@@ -226,6 +228,10 @@ extension String {
     }
 }
 
+func bridgeOptionalClasses(_ xdata: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<UnsafePointer<Int8>?>? {
+    return nil
+}
+
 @MainActor
 func logCallback(_ vmPointer: OpaquePointer?, message: UnsafePointer<CChar>?, xdata: UnsafeMutableRawPointer?) {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
@@ -247,18 +253,24 @@ func errorCallback(_ vmPointer: OpaquePointer?, errType: error_type_t, message: 
 func bridgeFree(_ vmPointer: OpaquePointer?, objptr: UnsafeMutablePointer<gravity_object_t>?) {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
     let value = GSValue(object: objptr, in: vm)
+    
+    if let delegate = vm.delegate as? GravityMemoryControlVMDelegate {
+        delegate.virtualMachine(vm, didRequestFree: value)
+        return
+    }
+    
     if let xData = value.xData {
         Unmanaged<AnyObject>.fromOpaque(xData).release()
     }
-    
-    vm.delegate.virtualMachine(vm, didRequestFree: value)
 }
 
 func bridgeSize(_ vmPointer: OpaquePointer?, objptr: UnsafeMutablePointer<gravity_object_t>?) -> UInt32 {
     guard let vm = GravityVirtualMachine.getVM(vmPointer!) else { fatalError("Cannot found Virtual Machine") }
-    
     let value = GSValue(object: objptr, in: vm)
-    return vm.delegate.virtualMachine(vm, didRequestSizeFor: value)
+    if let delegate = vm.delegate as? GravityMemoryControlVMDelegate {
+        return delegate.virtualMachine(vm, didRequestSizeFor: value)
+    }
+    return 0
 }
 
 func bridgeClone(
@@ -267,10 +279,12 @@ func bridgeClone(
 ) -> UnsafeMutableRawPointer? {
     guard let vm = GravityVirtualMachine.getVM(vmPointer) else { fatalError("Cannot found Virtual Machine") }
     let value = GSValue(object: objptr, in: vm)
-    let clonedValue = vm.delegate.virtalMachine(vm, didRequestCloneFor: value)
     
-    fatalError()
-//    return UnsafeMutableRawPointer(
+    if let delegate = vm.delegate as? GravityMemoryControlVMDelegate {
+        return delegate.virtalMachine(vm, didRequestCloneFor: value).xData
+    }
+    
+    return objptr
 }
 
 /// get description from object xdata
@@ -281,6 +295,7 @@ func bridgeString(
 ) -> UnsafePointer<CChar>? {
     guard let vm = GravityVirtualMachine.getVM(vmPointer) else { fatalError("Cannot found Virtual Machine") }
     let string = vm.delegate.virtualMachine(vm, didRequestStringWith: length!.pointee, data: xdata)
+    length?.pointee = UInt32(string.utf8.count)
     return string.toPointer()
 }
 
@@ -307,6 +322,18 @@ func bridgeInitInstance(
     let arguments: [GSValue] = (1..<argsCount).map { index in
         let arg = args![Int(index)]
         return GSValue(object: arg, in: vm)
+    }
+    
+    if let delegate = vm.delegate as? GravityMemoryControlVMDelegate {
+        let context = GSValue(value: ctx, in: vm)
+        return delegate.virtualMachine(
+            vm,
+            didInitObjectIn: context,
+            instance: instance,
+            arguments: arguments,
+            argumentsCount: argsCount,
+            data: xdata
+        )
     }
     
     let method = Unmanaged<MethodDescriptor>.fromOpaque(xdata!).takeUnretainedValue()

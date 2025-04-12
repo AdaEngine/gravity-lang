@@ -14,8 +14,6 @@ public protocol GravityVirtualMachineDelegate: AnyObject {
     
     func virtualMachineBridgeEquals(_ virtualMachine: GravityVirtualMachine, lhsValue: GSValue, rhsValue: GSValue) -> Bool
     
-    func virtalMachine(_ virtualMachine: GravityVirtualMachine, didRequestCloneFor object: GSValue) -> GSValue
-    
     func virtualMachine(
         _ virtualMachine: GravityVirtualMachine,
         didExecuteIn ctx: GSValue,
@@ -59,9 +57,12 @@ public protocol GravityVirtualMachineDelegate: AnyObject {
         forKey key: String
     ) throws -> GSValue?
     
-    // MARK: Memory managment
-    
     func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestStringWith length: UInt32, data: UnsafeMutableRawPointer?) -> String
+}
+
+// MARK: Memory managment
+
+public protocol GravityMemoryControlVMDelegate: GravityVirtualMachineDelegate {
     
     func virtualMachine(_ virtualMachine: GravityVirtualMachine, didRequestFree object: GSValue)
     
@@ -75,4 +76,6 @@ public protocol GravityVirtualMachineDelegate: AnyObject {
         argumentsCount: Int16,
         data: UnsafeMutableRawPointer?
     ) -> Bool
+    
+    func virtalMachine(_ virtualMachine: GravityVirtualMachine, didRequestCloneFor object: GSValue) -> GSValue
 }

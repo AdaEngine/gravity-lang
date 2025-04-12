@@ -82,6 +82,8 @@ public extension GSValue {
             self.init(value: exportType, in: vm)
         } else if let value = object as? gravity_value_t {
             self.init(value: value, in: vm)
+        } else if let array = object as? [Any] {
+            self.init(newArrayIn: vm, items: array)
         } else if let gravityObject = object as? UnsafeMutablePointer<gravity_object_t> {
             let value = gravity_value_from_object(gravityObject)
             self.init(value: value, in: vm)
@@ -94,6 +96,17 @@ public extension GSValue {
     convenience init(newArrayIn vm: GravityVirtualMachine, length: Int = 1) {
         let list = gravity_list_new(vm.vmPtr, UInt32(length))
         let value = gravity_value_from_object(list)
+        self.init(value: value, in: vm)
+    }
+    
+    /// Create a new array in virtual machine memory with given length.
+    convenience init(newArrayIn vm: GravityVirtualMachine, items: [Any]) {
+        let list = gravity_list_new(vm.vmPtr, UInt32(items.count))
+        let value = gravity_value_from_object(list)
+        for item in items {
+            let value = GSValue(object: item, in: vm)
+            gravity_list_push_value(list, value.value)
+        }
         self.init(value: value, in: vm)
     }
     
@@ -504,7 +517,6 @@ public final class GSIntstance {
     public private(set) var value: GSValue?
     unowned let vm: GravityVirtualMachine
     
-    // FIXME: Memory leak
     public convenience init<T: GSExportable & AnyObject>(object: T, vm: GravityVirtualMachine) {
         let clazz = vm.getOrRegisterClass(T.self)
         let instance = gravity_instance_new(vm.vmPtr, clazz)
