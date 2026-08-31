@@ -78,6 +78,50 @@ struct GravityVirtualMachineTests {
         #expect(delegate.errors.isEmpty)
         #expect(result.toInteger == 2)
     }
+
+    @Test("Collects declaration annotations without executing main")
+    func collectsDeclarationAnnotations() throws {
+        let delegate = TestVirtualMachineDelegate()
+        let virtualMachine = GravityVirtualMachine(settings: .init(), delegate: delegate)
+        let binary = virtualMachine.loadGravityFile(from: """
+        @system(scheduler: "update")
+        class MovementSystem {
+            @query(Transform, Velocity, with: [Movable], without: Frozen)
+            var movers;
+
+            func update(context) {
+            }
+        }
+        """)
+
+        #expect(delegate.errors.isEmpty)
+        #expect(binary.annotations.count == 2)
+
+        let system = try #require(binary.annotations.first { $0.name == "system" })
+        #expect(system.target.kind == .class)
+        #expect(system.target.identifier == "MovementSystem")
+        #expect(system.target.parentIdentifier == nil)
+        #expect(system.arguments == [
+            .init(label: "scheduler", value: .string("update"))
+        ])
+
+        let query = try #require(binary.annotations.first { $0.name == "query" })
+        #expect(query.target.kind == .variableDeclaration)
+        #expect(query.target.identifier == "movers")
+        #expect(query.target.parentIdentifier == "MovementSystem")
+        #expect(query.arguments == [
+            .init(label: nil, value: .identifier("Transform")),
+            .init(label: nil, value: .identifier("Velocity")),
+            .init(label: "with", value: .list([.identifier("Movable")])),
+            .init(label: "without", value: .identifier("Frozen"))
+        ])
+
+        virtualMachine.load(binary)
+        let systemClass = virtualMachine.getValue(forKey: "MovementSystem")
+        #expect(systemClass.isClass)
+        let systemInstance = try #require(systemClass.callAsFunction())
+        #expect(systemInstance.isInstance)
+    }
 }
 
 @GSExportable

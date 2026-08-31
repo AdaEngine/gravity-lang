@@ -11,6 +11,7 @@ import CGravity
 public struct GravityBinary {
     let binary: UnsafeMutablePointer<gravity_closure_t>!
     let compiler: GravityCompiler
+    public let annotations: [GravityAnnotation]
 }
 
 /// Gravity Compiler
@@ -38,7 +39,11 @@ public final class GravityCompiler {
             )
         }
 
-        return GravityBinary(binary: closure, compiler: self)
+        return GravityBinary(
+            binary: closure,
+            compiler: self,
+            annotations: GravityAnnotation.collect(from: compiler)
+        )
     }
     
     func transferMem(to vm: GravityVirtualMachine) {

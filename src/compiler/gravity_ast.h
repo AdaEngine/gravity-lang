@@ -42,6 +42,46 @@ typedef enum {
     LOCATION_CLASS_IVAR_OUTER
 } gnode_location_type;
 
+typedef enum {
+    GRAVITY_ANNOTATION_VALUE_IDENTIFIER,
+    GRAVITY_ANNOTATION_VALUE_STRING,
+    GRAVITY_ANNOTATION_VALUE_INT,
+    GRAVITY_ANNOTATION_VALUE_FLOAT,
+    GRAVITY_ANNOTATION_VALUE_BOOL,
+    GRAVITY_ANNOTATION_VALUE_NULL,
+    GRAVITY_ANNOTATION_VALUE_LIST
+} gravity_annotation_value_kind;
+
+typedef struct gravity_annotation_value_t gravity_annotation_value_t;
+typedef marray_t(gravity_annotation_value_t *) gravity_annotation_value_r;
+
+struct gravity_annotation_value_t {
+    gravity_annotation_value_kind kind;
+    union {
+        const char *string;
+        int64_t integer;
+        double floating;
+        bool boolean;
+        gravity_annotation_value_r *list;
+    } value;
+};
+
+typedef struct {
+    const char *label;
+    gravity_annotation_value_t *value;
+} gravity_annotation_argument_t;
+
+typedef marray_t(gravity_annotation_argument_t *) gravity_annotation_argument_r;
+
+typedef struct {
+    const char *identifier;
+    gravity_annotation_argument_r *arguments;
+    gtoken_s token;
+    void *target;
+} gravity_annotation_t;
+
+typedef marray_t(gravity_annotation_t *) gravity_annotation_r;
+
 // BASE NODE
 typedef struct {
     gnode_n     tag;                        // node type from gnode_n enum
@@ -50,6 +90,7 @@ typedef struct {
     gtoken_s    token;                      // token type and location
     bool        is_assignment;              // flag to check if it is an assignment node
     void        *decl;                      // enclosing declaration node
+    gravity_annotation_r *annotations;      // declaration metadata annotations
 } gnode_t;
 
 // UPVALUE STRUCT
@@ -296,6 +337,13 @@ gupvalue_t *gnode_function_add_upvalue(gnode_function_decl_t *f, gnode_var_t *sy
 gnode_t    *gnode2class (gnode_t *node, bool *isextern);
 cstring_r  *cstring_array_create (void);
 void_r     *void_array_create (void);
+
+gravity_annotation_value_t *gravity_annotation_value_create(gravity_annotation_value_kind kind);
+void gravity_annotation_value_free(gravity_annotation_value_t *value);
+gravity_annotation_argument_t *gravity_annotation_argument_create(const char *label, gravity_annotation_value_t *value);
+gravity_annotation_t *gravity_annotation_create(const char *identifier, gtoken_s token);
+gravity_annotation_r *gravity_annotation_array_create(void);
+void gravity_annotation_free(gravity_annotation_t *annotation);
 
 void    gnode_free (gnode_t *node);
 bool    gnode_is_equal (gnode_t *node1, gnode_t *node2);

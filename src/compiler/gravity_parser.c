@@ -123,6 +123,8 @@ static gnode_t *parse_function (gravity_parser_t *parser, bool is_declaration, g
 static gnode_t *adjust_assignment_expression (gravity_parser_t *parser, gtoken_t tok, gnode_t *lnode, gnode_t *rnode);
 static gnode_t *parse_literal_expression (gravity_parser_t *parser);
 static gnode_t *parse_macro_statement (gravity_parser_t *parser);
+static gnode_t *parse_special_statement(gravity_parser_t *parser);
+static gravity_annotation_value_t *parse_annotation_value(gravity_parser_t *parser);
 
 // MARK: - Utils functions -
 
@@ -1796,8 +1798,10 @@ static gnode_t *parse_class_declaration (gravity_parser_t *parser, gtoken_t acce
     if (storage_specifier != TOK_KEY_EXTERN) {
         PUSH_DECLARATION(node);
         peek = gravity_lexer_peek(lexer);
-        while (token_isdeclaration_statement(peek) || token_ismacro(peek)) {
-            gnode_t *decl = parse_declaration_statement(parser);
+        while (token_isdeclaration_statement(peek) || token_isspecial_statement(peek) || token_ismacro(peek)) {
+            gnode_t *decl = token_isspecial_statement(peek)
+                ? parse_special_statement(parser)
+                : parse_declaration_statement(parser);
             if (decl) gnode_array_push(declarations, decl_check_access_specifier(decl));
             peek = gravity_lexer_peek(lexer);
         }
@@ -2486,17 +2490,155 @@ static gnode_t *parse_special_statement (gravity_parser_t *parser) {
     DEBUG_PARSER("parse_special_statement");
     DECLARE_LEXER;
 
-    // consume special @ symbol
-    gtoken_t type = gravity_lexer_next(lexer);
-    assert(type == TOK_SPECIAL);
+    gravity_annotation_r *annotations = gravity_annotation_array_create();
+    while (gravity_lexer_peek(lexer) == TOK_SPECIAL) {
+        gravity_lexer_next(lexer);
+        gtoken_s token = gravity_lexer_token(lexer);
+        const char *identifier = parse_identifier(parser);
+        if (!identifier) goto handle_error;
 
-    // special is really special so it has its own parser
-    // because I don't want to mess standard syntax
-    const char *specialid = parse_identifier(parser);
-    if (specialid == NULL) goto handle_error;
+        gravity_annotation_t *annotation = gravity_annotation_create(identifier, token);
+        if (gravity_lexer_peek(lexer) == TOK_OP_OPEN_PARENTHESIS) {
+            gravity_lexer_next(lexer);
+            while (gravity_lexer_peek(lexer) != TOK_OP_CLOSED_PARENTHESIS) {
+                const char *label = NULL;
+                gravity_annotation_value_t *value = NULL;
+                if (gravity_lexer_peek(lexer) == TOK_IDENTIFIER) {
+                    gravity_lexer_next(lexer);
+                    gtoken_s identifier_token = gravity_lexer_token(lexer);
+                    const char *candidate = cstring_from_token(parser, identifier_token);
+                    if (gravity_lexer_peek(lexer) == TOK_OP_COLON) {
+                        gravity_lexer_next(lexer);
+                        label = candidate;
+                        value = parse_annotation_value(parser);
+                    } else {
+                        value = gravity_annotation_value_create(GRAVITY_ANNOTATION_VALUE_IDENTIFIER);
+                        value->value.string = candidate;
+                    }
+                } else {
+                    value = parse_annotation_value(parser);
+                }
+                if (!value) {
+                    if (label) mem_free((void *)label);
+                    gravity_annotation_free(annotation);
+                    goto handle_error;
+                }
+                marray_push(
+                    gravity_annotation_argument_t *,
+                    *annotation->arguments,
+                    gravity_annotation_argument_create(label, value)
+                );
+
+                if (gravity_lexer_peek(lexer) == TOK_OP_COMMA) {
+                    gravity_lexer_next(lexer);
+                    if (gravity_lexer_peek(lexer) == TOK_OP_CLOSED_PARENTHESIS) break;
+                    continue;
+                }
+                break;
+            }
+            parse_required(parser, TOK_OP_CLOSED_PARENTHESIS);
+        }
+        marray_push(gravity_annotation_t *, *annotations, annotation);
+    }
+
+    if (!token_isdeclaration_statement(gravity_lexer_peek(lexer))) {
+        REPORT_ERROR(gravity_lexer_token(lexer), "%s", "An annotation must be followed by a declaration.");
+        goto handle_error;
+    }
+
+    gnode_t *declaration = parse_declaration_statement(parser);
+    if (!declaration) goto handle_error;
+    declaration->annotations = annotations;
+    gtype_array_each(annotations, {val->target = declaration;}, gravity_annotation_t *);
+    return declaration;
 
 handle_error:
-    REPORT_WARNING(gravity_lexer_token(lexer), "%s", "Unknown special token. Declaration will be ignored.");
+    if (annotations) {
+        gtype_array_each(annotations, {gravity_annotation_free(val);}, gravity_annotation_t *);
+        marray_destroy(*annotations);
+        mem_free(annotations);
+    }
+    return NULL;
+}
+
+static gravity_annotation_value_t *parse_annotation_value(gravity_parser_t *parser) {
+    DECLARE_LEXER;
+    gtoken_t peek = gravity_lexer_peek(lexer);
+
+    if (peek == TOK_OP_OPEN_SQUAREBRACKET) {
+        gravity_lexer_next(lexer);
+        gravity_annotation_value_t *value = gravity_annotation_value_create(GRAVITY_ANNOTATION_VALUE_LIST);
+        value->value.list = mem_alloc(NULL, sizeof(gravity_annotation_value_r));
+        marray_init(*value->value.list);
+        while (gravity_lexer_peek(lexer) != TOK_OP_CLOSED_SQUAREBRACKET) {
+            gravity_annotation_value_t *item = parse_annotation_value(parser);
+            if (!item) {
+                gravity_annotation_value_r *items = value->value.list;
+                gtype_array_each(items, {gravity_annotation_value_free(val);}, gravity_annotation_value_t *);
+                marray_destroy(*items);
+                mem_free(items);
+                mem_free(value);
+                return NULL;
+            }
+            marray_push(gravity_annotation_value_t *, *value->value.list, item);
+            if (gravity_lexer_peek(lexer) == TOK_OP_COMMA) {
+                gravity_lexer_next(lexer);
+                if (gravity_lexer_peek(lexer) == TOK_OP_CLOSED_SQUAREBRACKET) break;
+                continue;
+            }
+            break;
+        }
+        parse_required(parser, TOK_OP_CLOSED_SQUAREBRACKET);
+        return value;
+    }
+
+    if (peek == TOK_IDENTIFIER) {
+        gravity_lexer_next(lexer);
+        gravity_annotation_value_t *value = gravity_annotation_value_create(GRAVITY_ANNOTATION_VALUE_IDENTIFIER);
+        value->value.string = cstring_from_token(parser, gravity_lexer_token(lexer));
+        return value;
+    }
+
+    if (peek == TOK_KEY_NULL) {
+        gravity_lexer_next(lexer);
+        return gravity_annotation_value_create(GRAVITY_ANNOTATION_VALUE_NULL);
+    }
+
+    if ((peek == TOK_STRING) || (peek == TOK_NUMBER) || (peek == TOK_KEY_TRUE) || (peek == TOK_KEY_FALSE)) {
+        gnode_t *literal_node = parse_literal_expression(parser);
+        if (!literal_node || literal_node->tag != NODE_LITERAL_EXPR) {
+            if (literal_node) gnode_free(literal_node);
+            REPORT_ERROR(gravity_lexer_token(lexer), "%s", "Annotation arguments must be constant values.");
+            return NULL;
+        }
+        gnode_literal_expr_t *literal = (gnode_literal_expr_t *)literal_node;
+        gravity_annotation_value_t *value = NULL;
+        switch (literal->type) {
+            case LITERAL_STRING:
+                value = gravity_annotation_value_create(GRAVITY_ANNOTATION_VALUE_STRING);
+                value->value.string = string_ndup(literal->value.str, literal->len);
+                break;
+            case LITERAL_INT:
+                value = gravity_annotation_value_create(GRAVITY_ANNOTATION_VALUE_INT);
+                value->value.integer = literal->value.n64;
+                break;
+            case LITERAL_FLOAT:
+                value = gravity_annotation_value_create(GRAVITY_ANNOTATION_VALUE_FLOAT);
+                value->value.floating = literal->value.d;
+                break;
+            case LITERAL_BOOL:
+                value = gravity_annotation_value_create(GRAVITY_ANNOTATION_VALUE_BOOL);
+                value->value.boolean = literal->value.n64 != 0;
+                break;
+            case LITERAL_STRING_INTERPOLATED:
+                REPORT_ERROR(literal->base.token, "%s", "Interpolated strings are not allowed in annotations.");
+                break;
+        }
+        gnode_free(literal_node);
+        return value;
+    }
+
+    REPORT_ERROR(gravity_lexer_token(lexer), "Unsupported annotation value %s.", token_name(peek));
     return NULL;
 }
 

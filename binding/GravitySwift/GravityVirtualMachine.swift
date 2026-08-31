@@ -91,6 +91,12 @@ public final class GravityVirtualMachine {
         
         return nil
     }
+
+    /// Loads and initializes a compiled module without invoking `main()`.
+    public func load(_ binary: GravityBinary) {
+        binary.compiler.transferMem(to: self)
+        gravity_vm_loadclosure(self.vmPtr, binary.binary)
+    }
     
     @discardableResult
     public func execute(

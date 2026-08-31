@@ -271,7 +271,7 @@ bool token_isstatement (gtoken_t token) {
     return (token_islabel_statement(token) || token_isexpression_statement(token) || token_isflow_statement(token) ||
             token_isloop_statement(token) || token_isjump_statement(token) || token_iscompound_statement(token) ||
             token_isdeclaration_statement(token) || token_isempty_statement(token) || token_isimport_statement(token) ||
-            token_ismacro(token));
+            token_isspecial_statement(token) || token_ismacro(token));
 }
 
 bool token_isassignment (gtoken_t token) {

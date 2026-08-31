@@ -25,7 +25,45 @@ struct gravity_compiler_t {
     gravity_vm              *vm;
     gnode_t                 *ast;
     void_r                  *objects;
+    void_r                  *annotations;
 };
+
+static void collect_annotations(gnode_t *node, void_r *annotations) {
+    if (!node) return;
+    if (node->annotations) {
+        gtype_array_each(node->annotations, {marray_push(void *, *annotations, val);}, gravity_annotation_t *);
+    }
+    switch (node->tag) {
+        case NODE_LIST_STAT:
+        case NODE_COMPOUND_STAT: {
+            gnode_compound_stmt_t *block = (gnode_compound_stmt_t *)node;
+            gnode_array_each(block->stmts, {collect_annotations(val, annotations);});
+            break;
+        }
+        case NODE_CLASS_DECL: {
+            gnode_class_decl_t *declaration = (gnode_class_decl_t *)node;
+            gnode_array_each(declaration->decls, {collect_annotations(val, annotations);});
+            break;
+        }
+        case NODE_MODULE_DECL: {
+            gnode_module_decl_t *declaration = (gnode_module_decl_t *)node;
+            gnode_array_each(declaration->decls, {collect_annotations(val, annotations);});
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+static const char *annotation_node_identifier(gnode_t *node) {
+    if (!node) return NULL;
+    if (node->tag == NODE_VARIABLE_DECL) {
+        gnode_variable_decl_t *declaration = (gnode_variable_decl_t *)node;
+        if (!declaration->decls || gnode_array_size(declaration->decls) == 0) return NULL;
+        return gnode_identifier(gnode_array_get(declaration->decls, 0));
+    }
+    return gnode_identifier(node);
+}
 
 static void internal_vm_transfer (gravity_vm *vm, gravity_object_t *obj) {
     gravity_compiler_t *compiler = (gravity_compiler_t *)gravity_vm_getdata(vm);
@@ -73,6 +111,7 @@ gravity_compiler_t *gravity_compiler_create (gravity_delegate_t *delegate) {
 
     compiler->ast = NULL;
     compiler->objects = void_array_create();
+    compiler->annotations = void_array_create();
     compiler->delegate = delegate;
     return compiler;
 }
@@ -102,12 +141,17 @@ static void gravity_compiler_reset (gravity_compiler_t *compiler) {
         marray_destroy(*compiler->objects);
         mem_free((void*)compiler->objects);
     }
+    if (compiler->annotations) {
+        marray_destroy(*compiler->annotations);
+        mem_free(compiler->annotations);
+    }
 
     // reset internal pointers
     compiler->vm = NULL;
     compiler->ast = NULL;
     compiler->parser = NULL;
     compiler->objects = NULL;
+    compiler->annotations = NULL;
     compiler->storage = NULL;
 }
 
@@ -149,8 +193,14 @@ gravity_closure_t *gravity_compiler_run (gravity_compiler_t *compiler, const cha
     if ((source == NULL) || (len == 0)) return NULL;
 
     // CHECK cleanup first
+    if (compiler->annotations) {
+        marray_destroy(*compiler->annotations);
+        mem_free(compiler->annotations);
+        compiler->annotations = void_array_create();
+    }
     if (compiler->ast) gnode_free(compiler->ast);
     if (!compiler->objects) compiler->objects = void_array_create();
+    if (!compiler->annotations) compiler->annotations = void_array_create();
 
     // CODEGEN requires a mini vm in order to be able to handle garbage collector.
     // The mini VM is just a container for the transfer/cleanup callbacks (it holds no
@@ -173,6 +223,7 @@ gravity_closure_t *gravity_compiler_run (gravity_compiler_t *compiler, const cha
     // STEP 1: SYNTAX CHECK
     compiler->ast = gravity_parser_run(compiler->parser, compiler->delegate);
     if (!compiler->ast) goto abort_compilation;
+    collect_annotations(compiler->ast, compiler->annotations);
     gravity_parser_free(compiler->parser);
     compiler->parser = NULL;
 
@@ -195,6 +246,62 @@ gravity_closure_t *gravity_compiler_run (gravity_compiler_t *compiler, const cha
 abort_compilation:
     gravity_compiler_reset(compiler);
     return NULL;
+}
+
+uint32_t gravity_compiler_annotation_count(gravity_compiler_t *compiler) {
+    return (compiler && compiler->annotations) ? (uint32_t)marray_size(*compiler->annotations) : 0;
+}
+
+const gravity_annotation_t *gravity_compiler_annotation_at(gravity_compiler_t *compiler, uint32_t index) {
+    if (!compiler || !compiler->annotations || index >= marray_size(*compiler->annotations)) return NULL;
+    return (const gravity_annotation_t *)marray_get(*compiler->annotations, index);
+}
+
+const char *gravity_annotation_name(const gravity_annotation_t *annotation) {
+    return annotation ? annotation->identifier : NULL;
+}
+
+uint32_t gravity_annotation_line(const gravity_annotation_t *annotation) { return annotation ? annotation->token.lineno : 0; }
+uint32_t gravity_annotation_column(const gravity_annotation_t *annotation) { return annotation ? annotation->token.colno : 0; }
+uint32_t gravity_annotation_fileid(const gravity_annotation_t *annotation) { return annotation ? annotation->token.fileid : 0; }
+uint32_t gravity_annotation_target_kind(const gravity_annotation_t *annotation) {
+    return (annotation && annotation->target) ? (uint32_t)((gnode_t *)annotation->target)->tag : UINT32_MAX;
+}
+const char *gravity_annotation_target_identifier(const gravity_annotation_t *annotation) {
+    return (annotation && annotation->target) ? annotation_node_identifier((gnode_t *)annotation->target) : NULL;
+}
+const char *gravity_annotation_target_parent_identifier(const gravity_annotation_t *annotation) {
+    if (!annotation || !annotation->target) return NULL;
+    gnode_t *target = (gnode_t *)annotation->target;
+    return annotation_node_identifier((gnode_t *)target->decl);
+}
+uint32_t gravity_annotation_argument_count(const gravity_annotation_t *annotation) {
+    return (annotation && annotation->arguments) ? (uint32_t)marray_size(*annotation->arguments) : 0;
+}
+const char *gravity_annotation_argument_label(const gravity_annotation_t *annotation, uint32_t index) {
+    if (!annotation || !annotation->arguments || index >= marray_size(*annotation->arguments)) return NULL;
+    gravity_annotation_argument_t *argument = marray_get(*annotation->arguments, index);
+    return argument->label;
+}
+const gravity_annotation_value_t *gravity_annotation_argument_value(const gravity_annotation_t *annotation, uint32_t index) {
+    if (!annotation || !annotation->arguments || index >= marray_size(*annotation->arguments)) return NULL;
+    gravity_annotation_argument_t *argument = marray_get(*annotation->arguments, index);
+    return argument->value;
+}
+uint32_t gravity_annotation_value_kind_get(const gravity_annotation_value_t *value) { return value ? (uint32_t)value->kind : UINT32_MAX; }
+const char *gravity_annotation_value_string(const gravity_annotation_value_t *value) {
+    if (!value || ((value->kind != GRAVITY_ANNOTATION_VALUE_IDENTIFIER) && (value->kind != GRAVITY_ANNOTATION_VALUE_STRING))) return NULL;
+    return value->value.string;
+}
+int64_t gravity_annotation_value_int(const gravity_annotation_value_t *value) { return value ? value->value.integer : 0; }
+double gravity_annotation_value_float(const gravity_annotation_value_t *value) { return value ? value->value.floating : 0; }
+bool gravity_annotation_value_bool(const gravity_annotation_value_t *value) { return value ? value->value.boolean : false; }
+uint32_t gravity_annotation_value_count(const gravity_annotation_value_t *value) {
+    return (value && value->kind == GRAVITY_ANNOTATION_VALUE_LIST && value->value.list) ? (uint32_t)marray_size(*value->value.list) : 0;
+}
+const gravity_annotation_value_t *gravity_annotation_value_at(const gravity_annotation_value_t *value, uint32_t index) {
+    if (!value || value->kind != GRAVITY_ANNOTATION_VALUE_LIST || !value->value.list || index >= marray_size(*value->value.list)) return NULL;
+    return marray_get(*value->value.list, index);
 }
 
 json_t *gravity_compiler_serialize (gravity_compiler_t *compiler, gravity_closure_t *closure) {

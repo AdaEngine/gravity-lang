@@ -401,6 +401,25 @@ extension GSValue: Equatable {
 
 public extension GSValue {
     @discardableResult
+    func setStoredProperty(named name: String, to newValue: GSValue) -> Bool {
+        guard isInstance, let instance = toGravityInstance else {
+            return false
+        }
+        let key = GSValue(string: name, in: vm).value
+        var index = name.withCString { gravity_class_ivar_index(instance.pointee.objclass, $0) }
+        if index < 0,
+           let closure = gravity_class_lookup_closure(instance.pointee.objclass, key),
+           let function = closure.pointee.f {
+            index = Int16(function.pointee.index)
+        }
+        guard index >= 0 else {
+            return false
+        }
+        gravity_instance_setivar(instance, UInt32(index), newValue.value)
+        return true
+    }
+
+    @discardableResult
     func callMethod(named name: String, with args: [Any]) -> GSValue? {
         guard self.isInstance else {
             return nil
@@ -428,10 +447,15 @@ public extension GSValue {
 
     @discardableResult
     func callAsFunction(_ args: Any...) -> GSValue? {
-        let closure = self.toGravityClosure
-        let arguments = args.map { GSValue(object: $0, in: self.vm) }
-        
-        return self.vm.execute(closure: closure, sender: nil, params: arguments)
+        let key = GSValue(string: "exec", in: vm).value
+        guard let closure = gravity_class_lookup_closure(gravity_value_getclass(value), key) else {
+            return nil
+        }
+        return vm.execute(
+            closure: closure,
+            sender: self,
+            params: args.map { GSValue(object: $0, in: vm) }
+        )
     }
 }
 

@@ -13,7 +13,7 @@
 #include "gravity_visitor.h"
 #include "gravity_symboltable.h"
 
-#define SETBASE(node,tagv,_tok)         node->base.tag = tagv; node->base.token = _tok
+#define SETBASE(node,tagv,_tok)         node->base.tag = tagv; node->base.token = _tok; node->base.annotations = NULL
 #define SETDECL(node,_decl)             node->base.decl = _decl
 #define CHECK_REFCOUNT(_node)           if (_node->base.refcount > 0) {--_node->base.refcount; return;}
 
@@ -23,6 +23,63 @@ void_r *void_array_create (void) {
     void_r *r = mem_alloc(NULL, sizeof(void_r));
     marray_init(*r);
     return r;
+}
+
+gravity_annotation_r *gravity_annotation_array_create(void) {
+    gravity_annotation_r *r = mem_alloc(NULL, sizeof(gravity_annotation_r));
+    marray_init(*r);
+    return r;
+}
+
+gravity_annotation_value_t *gravity_annotation_value_create(gravity_annotation_value_kind kind) {
+    gravity_annotation_value_t *value = mem_alloc(NULL, sizeof(gravity_annotation_value_t));
+    value->kind = kind;
+    return value;
+}
+
+gravity_annotation_argument_t *gravity_annotation_argument_create(const char *label, gravity_annotation_value_t *value) {
+    gravity_annotation_argument_t *argument = mem_alloc(NULL, sizeof(gravity_annotation_argument_t));
+    argument->label = label;
+    argument->value = value;
+    return argument;
+}
+
+gravity_annotation_t *gravity_annotation_create(const char *identifier, gtoken_s token) {
+    gravity_annotation_t *annotation = mem_alloc(NULL, sizeof(gravity_annotation_t));
+    annotation->identifier = identifier;
+    annotation->token = token;
+    annotation->target = NULL;
+    annotation->arguments = mem_alloc(NULL, sizeof(gravity_annotation_argument_r));
+    marray_init(*annotation->arguments);
+    return annotation;
+}
+
+void gravity_annotation_value_free(gravity_annotation_value_t *value) {
+    if (!value) return;
+    if ((value->kind == GRAVITY_ANNOTATION_VALUE_IDENTIFIER) ||
+        (value->kind == GRAVITY_ANNOTATION_VALUE_STRING)) {
+        if (value->value.string) mem_free((void *)value->value.string);
+    } else if ((value->kind == GRAVITY_ANNOTATION_VALUE_LIST) && value->value.list) {
+        gtype_array_each(value->value.list, {gravity_annotation_value_free(val);}, gravity_annotation_value_t *);
+        marray_destroy(*value->value.list);
+        mem_free(value->value.list);
+    }
+    mem_free(value);
+}
+
+void gravity_annotation_free(gravity_annotation_t *annotation) {
+    if (!annotation) return;
+    if (annotation->identifier) mem_free((void *)annotation->identifier);
+    if (annotation->arguments) {
+        gtype_array_each(annotation->arguments, {
+            if (val->label) mem_free((void *)val->label);
+            gravity_annotation_value_free(val->value);
+            mem_free(val);
+        }, gravity_annotation_argument_t *);
+        marray_destroy(*annotation->arguments);
+        mem_free(annotation->arguments);
+    }
+    mem_free(annotation);
 }
 
 cstring_r *cstring_array_create (void) {
@@ -528,6 +585,15 @@ const char *gnode_identifier (gnode_t *node) {
 
 // MARK: - AST deallocator -
 
+static void free_annotations(gvisitor_t *self, gnode_t *node) {
+    #pragma unused(self)
+    if (!node->annotations) return;
+    gtype_array_each(node->annotations, {gravity_annotation_free(val);}, gravity_annotation_t *);
+    marray_destroy(*node->annotations);
+    mem_free(node->annotations);
+    node->annotations = NULL;
+}
+
 // STATEMENTS
 static void free_list_stmt (gvisitor_t *self, gnode_compound_stmt_t *node) {
     CHECK_REFCOUNT(node);
@@ -584,6 +650,7 @@ static void free_empty_stmt (gvisitor_t *self, gnode_empty_stmt_t *node) {
 
 static void free_variable (gvisitor_t *self, gnode_var_t *p) {
     CHECK_REFCOUNT(p);
+    free_annotations(self, (gnode_t *)p);
     if (p->identifier) mem_free((void *)p->identifier);
     if (p->annotation_type) mem_free((void *)p->annotation_type);
     if (p->expr) visit(p->expr);
@@ -748,7 +815,7 @@ void gnode_free (gnode_t *ast) {
         .delegate = NULL,
 
         // COMMON
-        .visit_pre = NULL,
+        .visit_pre = free_annotations,
         .visit_post = NULL,
 
         // STATEMENTS: 7
