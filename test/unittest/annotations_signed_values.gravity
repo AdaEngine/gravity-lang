@@ -1,0 +1,15 @@
+#unittest {
+    name: "Signed annotation literals and event lifecycle method.";
+    error: NONE;
+    result: 7;
+};
+@metadata(min: -3, max: +5, step: -0.5, nested: [-1, +2, [-3.5]])
+class Lifecycle {
+    var count = 4;
+    func event(context) { count = count + context; }
+}
+func main() {
+    var object = Lifecycle();
+    object.event(3);
+    return object.count;
+}

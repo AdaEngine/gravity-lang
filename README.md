@@ -96,6 +96,10 @@ Requires a C99 compiler. No external dependencies.
 
 ## Usage
 
+Experimental native AOT: `./gravity --emit-c source.gravity --module gameplay -o gameplay.c`.
+See [AOT backend and static library builds](docs/AOT.md) for native classes/structs, attributes,
+standalone C ABI, cross-compilation and validation.
+
 ```bash
 ./gravity file.gravity                  # Compile and execute a source file
 ./gravity -c file.gravity               # Compile to bytecode (outputs gravity.g)

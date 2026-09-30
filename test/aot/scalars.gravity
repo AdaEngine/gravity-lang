@@ -1,0 +1,25 @@
+func add(a: Int, b: Int) { return a + b; }
+func sum(n: Int) {
+    var total = 0;
+    var i = 0;
+    while (i < n) {
+        i = i + 1;
+        if (i == 3) continue;
+        if (i > 8) break;
+        total = add(total, i);
+    }
+    return total;
+}
+func fact(n: Int) {
+    if (n <= 1) return 1;
+    return n * fact(n - 1);
+}
+func logic(x: Bool) { return !x || (3 < 4 && true); }
+func wrap() { return 9223372036854775807 + 1; }
+func divide(a: Int, b: Int) { return a / b; }
+func infinite() { while (true) {} }
+func empty() {}
+func ordered() {
+    return add(add(1, 0), add(1, 1));
+}
+func main() { return sum(12) + fact(6) + ordered(); }

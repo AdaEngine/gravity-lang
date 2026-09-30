@@ -6,10 +6,18 @@ public struct GravityAnnotation: Sendable, Equatable {
     public let arguments: [Argument]
     public let source: SourceLocation
 
+    public init(name: String, target: Target, arguments: [Argument], source: SourceLocation) {
+        self.name = name; self.target = target; self.arguments = arguments; self.source = source
+    }
+
     public struct Target: Sendable, Equatable {
         public let kind: Kind
         public let identifier: String
         public let parentIdentifier: String?
+
+        public init(kind: Kind, identifier: String, parentIdentifier: String? = nil) {
+            self.kind = kind; self.identifier = identifier; self.parentIdentifier = parentIdentifier
+        }
 
         public enum Kind: UInt32, Sendable, Equatable {
             case enumeration = 7
@@ -36,6 +44,10 @@ public struct GravityAnnotation: Sendable, Equatable {
         public let fileID: UInt32
         public let line: UInt32
         public let column: UInt32
+
+        public init(fileID: UInt32, line: UInt32, column: UInt32) {
+            self.fileID = fileID; self.line = line; self.column = column
+        }
     }
 
     public indirect enum Value: Sendable, Equatable {

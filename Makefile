@@ -85,9 +85,13 @@ lib: $(OBJ)
 staticlib: $(OBJ)
 	$(AR) rcs $(SLIBTARGET) $(OBJ)
 
+# Native archive + standalone host + VM differential coverage.
+aottest: gravity
+	python3 test/aot/run_all.py
+
 clean:
 	rm -f $(OBJ) $(GRAVITY_OBJ) $(EXAMPLE_OBJ) $(JSONTEST_OBJ) $(DEP) gravity example jsontest libgravity.dylib libgravity.so $(SLIBTARGET) gravity.dll
 
-.PHONY: all clean lib staticlib
+.PHONY: all clean lib staticlib aottest
 
 -include $(DEP)
