@@ -13,6 +13,8 @@ let package = Package(
         .visionOS(.v1)
     ],
     products: [
+        .library(name: "GravityAOT", targets: ["GravityAOT"]),
+        .library(name: "CGravity", targets: ["CGravity"]),
         .library(
             name: "Gravity",
             targets: ["Gravity"]
@@ -22,6 +24,7 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-syntax", from: "602.0.0")
     ],
     targets: [
+        .target(name: "GravityAOT", dependencies: ["CGravity"], path: "binding/GravityAOT"),
         .executableTarget(
             name: "GravitySwiftExample",
             dependencies: ["Gravity"],

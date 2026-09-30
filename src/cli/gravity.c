@@ -7,6 +7,7 @@
 //
 
 #include "gravity_compiler.h"
+#include "gravity_aot.h"
 #define GRAVITY_INCLUDE_MATH
 #define GRAVITY_INCLUDE_JSON
 #define GRAVITY_INCLUDE_ENV
@@ -270,6 +271,7 @@ static void print_help (void) {
     printf("  --version          show version information and exit\n");
     printf("  --help             show command line usage and exit\n");
     printf("  -c input_file      compile input_file\n");
+    printf("  --emit-c input     emit experimental AOT C (--module prefix -o output.c)\n");
     printf("  -o output_file     specify output file name (default to %s)\n", DEFAULT_OUTPUT);
     printf("  -x input_file      execute input_file (JSON format expected)\n");
     printf("  -i source_code     compile and execute source_code string\n");
@@ -399,7 +401,55 @@ static void gravity_unittest (void) {
 
 // MARK: -
 
+static int gravity_emit_c(int argc, const char *argv[]) {
+    const char *input = NULL, *output = NULL, *prefix = "gravity_aot";
+    for (int i = 1; i < argc; ++i) {
+        const char *option = argv[i];
+        if (strcmp(option, "--emit-c") && strcmp(option, "--module") && strcmp(option, "-o")) {
+            fprintf(stderr, "Unknown AOT option: %s\n", option); return 1;
+        }
+        if (++i >= argc) { fprintf(stderr, "Missing value for %s\n", option); return 1; }
+        if (!strcmp(option, "--emit-c")) {
+            if (input) { fprintf(stderr, "Duplicate AOT input\n"); return 1; }
+            input = argv[i];
+        } else if (!strcmp(option, "--module")) prefix = argv[i];
+        else output = argv[i];
+    }
+    if (!input || !output || !strcmp(input, output)) {
+        fprintf(stderr, "Usage: gravity --emit-c input.gravity --module prefix -o output.c\n"); return 1;
+    }
+    mem_init();
+    size_t size = 0;
+    const char *source = file_read(input, &size);
+    if (!source || !size) { fprintf(stderr, "Cannot read AOT input: %s\n", input); if (source) mem_free(source); return 1; }
+    gravity_delegate_t delegate = {.error_callback = report_error, .loadfile_callback = load_file};
+    gravity_compiler_t *compiler = gravity_compiler_create(&delegate);
+    FILE *staged = tmpfile();
+    bool ok = compiler && staged;
+    if (!ok) fprintf(stderr, "Cannot initialize AOT compiler or staging stream\n");
+    if (ok) ok = gravity_compiler_run(compiler, source, size, 0, true, true) != NULL;
+    if (ok) ok = gravity_compiler_emit_c(compiler, staged, prefix, &delegate);
+    if (ok) {
+        if (fflush(staged) || fseek(staged, 0, SEEK_SET)) ok = false;
+        FILE *file = ok ? fopen(output, "wb") : NULL;
+        if (!file) { fprintf(stderr, "Cannot write AOT output: %s\n", output); ok = false; }
+        else {
+            char buffer[4096]; size_t count;
+            while ((count = fread(buffer, 1, sizeof(buffer), staged)))
+                if (fwrite(buffer, 1, count, file) != count) { ok = false; break; }
+            if (ferror(staged)) ok = false;
+            if (fclose(file)) ok = false;
+        }
+    }
+    if (staged) fclose(staged);
+    if (compiler) gravity_compiler_free(compiler);
+    mem_free(source);
+    return ok ? 0 : 1;
+}
+
 int main (int argc, const char* argv[]) {
+    for (int i = 1; i < argc; ++i)
+        if (!strcmp(argv[i], "--emit-c")) return gravity_emit_c(argc, argv);
     // parse arguments and return operation type
     op_type type = parse_args(argc, argv);
 

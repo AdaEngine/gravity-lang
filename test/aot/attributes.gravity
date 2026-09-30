@@ -1,0 +1,68 @@
+@component(id: "aot.position")
+struct Position {
+    @export var x = 1.0;
+    @export var y = -2.0;
+}
+@resource(id: "aot.time", autoInsert: true)
+struct Time {
+    @export var scale = 2.0;
+}
+@replicated_component(id: "aot.health", version: 2, authority: "host", visibility: "all_peers")
+struct Health {
+    @network_field(tag: 1, quantization: "int") var value = 100;
+    @local var dirty = false;
+}
+@network_command(id: "aot.hit", version: 1, direction: "to_host", delivery: "reliable", channel: "gameplay")
+struct Hit {
+    @network_field(tag: 1) var damage = 5;
+}
+@system(id: "aot.movement", scheduler: "update")
+@after(id: "input")
+@before(id: "render")
+class Movement {
+    @query(Position, with: [Active, Visible], without: Paused) var rows;
+    @resource(Time) var timing;
+    var calls = 0;
+    func update(context) {
+        calls = calls + 1;
+        for (var row in rows) {
+            row.Position.x = row.Position.x + context.deltaTime * timing.scale;
+        }
+        context.world.notify(calls);
+    }
+    @rpc(id: "aot.damage", direction: "to_host", delivery: "reliable")
+    func damage(amount: Int) { calls = calls + amount; }
+}
+@scriptable(id: "aot.controller", version: 2, aliases: ["OldController", "OlderController"])
+class Controller {
+    @component(Position, required: true) var position;
+    @resource(Time, optional: true) var clock;
+    @export var health = 10;
+    @export var label = "日本";
+    func ready(context) { health = health + context.bonus; }
+    func update(context) { position.x = position.x + context.deltaTime; }
+    func fixedUpdate(context) { health = health - 1; }
+    func event(context) { health = health + context.bonus; }
+    func destroy(context) { health = 0; }
+}
+@tool(id: "aot.tool", name: "Native Tool", version: "1.0", apiVersion: 1,
+      permissions: ["workspace.read"], platforms: [macos, ipados])
+class Tool { func activate(editor) { editor.notify(1); } }
+class Counter {
+    var value = 1;
+    func init(n: Int) { value = n; }
+    func add(n: Int) { value = value + n; return value; }
+}
+@metadata(note: "quotes: \" and slash", values: [Position, "text", -3, 2.5, true, null, ["nested"]])
+func main() {
+    var a = Position();
+    var b = a;
+    b.x = 20.0;
+    var c = Counter(2);
+    var d = c;
+    d.add(3);
+    var total = 0;
+    for (var i in 1...3) { total = total + i; }
+    for (var i in [1, 2, 3]) { total = total + i; }
+    return c.value + total + a.x;
+}

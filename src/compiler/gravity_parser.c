@@ -404,7 +404,14 @@ static gnode_t *parse_function (gravity_parser_t *parser, bool is_declaration, g
     const char *identifier = NULL;
     if (is_declaration) {
         gtoken_t peek = gravity_lexer_peek(lexer);
-        identifier = (token_isoperator(peek)) ? string_dup(token_name(gravity_lexer_next(lexer))) : parse_identifier(parser);
+        // AdaScript lifecycle method `event` shares a token with the unsupported
+        // event-declaration syntax. Permit it only as a class/struct method name.
+        if (peek == TOK_KEY_EVENT && IS_CLASS_ENCLOSED() && !IS_FUNCTION_ENCLOSED()) {
+            gravity_lexer_next(lexer);
+            identifier = string_dup("event");
+        } else {
+            identifier = (token_isoperator(peek)) ? string_dup(token_name(gravity_lexer_next(lexer))) : parse_identifier(parser);
+        }
         DEBUG_PARSER("parse_function_declaration %s", identifier);
     }
 
@@ -2752,6 +2759,23 @@ handle_error:
 static gravity_annotation_value_t *parse_annotation_value(gravity_parser_t *parser) {
     DECLARE_LEXER;
     gtoken_t peek = gravity_lexer_peek(lexer);
+
+    if (peek == TOK_OP_SUB || peek == TOK_OP_ADD) {
+        gravity_lexer_next(lexer);
+        gtoken_s sign = gravity_lexer_token(lexer);
+        if (gravity_lexer_peek(lexer) != TOK_NUMBER) {
+            REPORT_ERROR(sign, "%s", "An annotation sign must precede a numeric literal.");
+            return NULL;
+        }
+        gravity_annotation_value_t *value = parse_annotation_value(parser);
+        if (value && peek == TOK_OP_SUB) {
+            if (value->kind == GRAVITY_ANNOTATION_VALUE_INT)
+                value->value.integer = (int64_t)(UINT64_C(0) - (uint64_t)value->value.integer);
+            else if (value->kind == GRAVITY_ANNOTATION_VALUE_FLOAT)
+                value->value.floating = -value->value.floating;
+        }
+        return value;
+    }
 
     if (peek == TOK_OP_OPEN_SQUAREBRACKET) {
         gravity_lexer_next(lexer);
