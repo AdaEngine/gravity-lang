@@ -248,6 +248,29 @@ abort_compilation:
     return NULL;
 }
 
+bool gravity_compiler_prepare_native(gravity_compiler_t *compiler, const char *source, size_t len, uint32_t fileid) {
+    if (!compiler || !source || !len) return false;
+    gravity_compiler_reset(compiler);
+    compiler->objects = void_array_create();
+    compiler->annotations = void_array_create();
+    /* Semantic symbol tables use core String identity for hash keys. The mini
+     * context is compiler-only; native output never links or executes a VM. */
+    compiler->vm = gravity_vm_newmini();
+    gravity_vm_setdata(compiler->vm, (void *)compiler);
+    gravity_vm_set_callbacks(compiler->vm, internal_vm_transfer, internal_vm_cleanup);
+    gravity_core_register(compiler->vm);
+    compiler->parser = gravity_parser_create(source, len, fileid, true);
+    if (!compiler->parser) return false;
+    gravity_parser_set_native(compiler->parser);
+    compiler->ast = gravity_parser_run(compiler->parser, compiler->delegate);
+    gravity_parser_free(compiler->parser);
+    compiler->parser = NULL;
+    if (!compiler->ast || !gravity_semacheck1(compiler->ast, compiler->delegate) ||
+        !gravity_semacheck2(compiler->ast, compiler->delegate)) return false;
+    collect_annotations(compiler->ast, compiler->annotations);
+    return true;
+}
+
 uint32_t gravity_compiler_annotation_count(gravity_compiler_t *compiler) {
     return (compiler && compiler->annotations) ? (uint32_t)marray_size(*compiler->annotations) : 0;
 }

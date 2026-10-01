@@ -1,0 +1,12 @@
+extern var Time;
+extern var Tasks;
+async func child(value) { await Time.nextFrame(); return value + 2; }
+async func work() { var sum = 0; for (var value in [1,2,3]) { sum = sum + await child(value); } return sum; }
+async func immediate() { return 9; }
+async func failure() { await Time.nextFrame(); return 1 / 0; }
+async func infinite() { while (true) {} }
+async func stale(capability) { await Time.nextFrame(); return capability.value; }
+class PromiseOwner { var answer = Tasks.promise(); func reply() { answer.complete(42); } async func wait() { return await answer; } }
+
+@nonsendable class Locked { var value = 42; }
+async func unsafeCapture(values) { await Time.nextFrame(); return values[0].value; }

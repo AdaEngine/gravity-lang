@@ -106,7 +106,19 @@ static bool compiled_function(emitter *e, gnode_t *n) {
     return false;
 }
 static void postfix(emitter *e, gnode_postfix_expr_t *p, unsigned result, unsigned rhs) {
-    if (p->is_await) { ga_fail(e,(gnode_t *)p,"await is not supported by AOT yet"); return; }
+    if (p->is_await) {
+        if (!e->function->is_async || rhs || gnode_array_size(p->list) != 1) {
+            ga_fail(e,(gnode_t *)p,"invalid native await"); return;
+        }
+        gnode_postfix_subexpr_t *call = (gnode_postfix_subexpr_t *)gnode_array_get(p->list,0);
+        unsigned awaited = expr(e,gnode_array_get(call->args,0)), pc = ++e->suspension;
+        ga_put(e,"task->waiting=t%u; task->pc=%u;\nga_resume_%u:;\n",awaited,pc,pc);
+        ga_put(e,"gravity_aot_value t%u=gravity_aot_null();\n",result);
+        ga_put(e,"if (!gravity_aot_task_poll(ctx,task->waiting,&t%u)) goto ga_suspend;\n",result);
+        guard_error(e);
+        ga_put(e,"task->waiting=gravity_aot_null(); task->pc=0;\n");
+        return;
+    }
     size_t count=gnode_array_size(p->list), i=0;
     if (!count) { ga_fail(e,(gnode_t *)p,"unsupported postfix expression"); return; }
     unsigned current=0;
@@ -327,9 +339,9 @@ static void stmt(emitter *e, gnode_t *n) {
 }
 
 static bool add_function(emitter *e, gnode_function_decl_t *f) {
-    if (!identifier(f->identifier) || !f->block || f->is_async || f->is_closure || f->has_defaults ||
+    if (!identifier(f->identifier) || !f->block || f->is_closure || f->has_defaults ||
         gnode_array_size(f->uplist) || f->storage==TOK_KEY_EXTERN || f->storage==TOK_KEY_STATIC)
-        return ga_fail(e,(gnode_t *)f,"async, static/extern methods, captures and default arguments are not supported yet");
+        return ga_fail(e,(gnode_t *)f,"static/extern methods, captures and default arguments are not supported yet");
     gnode_array_push(e->functions,(gnode_t *)f); gnode_array_push(e->declarations,(gnode_t *)f); return true;
 }
 static bool collect(emitter *e, gnode_t *ast) {
@@ -363,19 +375,116 @@ static bool collect(emitter *e, gnode_t *ast) {
     if (!gnode_array_size(e->functions) && !gnode_array_size(e->classes)) return ga_fail(e,ast,"module has no declarations");
     return true;
 }
+/* Spill compiler-generated locals, expression temporaries, argument arrays and
+ * iteration cursors to a persistent task frame. Only generated C is scanned;
+ * user strings are octal escaped by ga_string. */
+static bool frame_token(const char *s, size_t *length, char *kind, unsigned *index) {
+    const char *p=s;
+    if (!strncmp(p,"state",5)) { *kind='s'; p+=5; }
+    else if (*p=='v' || *p=='t' || *p=='a') { *kind=*p++; }
+    else return false;
+    if (*p<'0' || *p>'9') return false;
+    *index=0;
+    while (*p>='0' && *p<='9') { *index=*index*10+(unsigned)(*p-'0'); ++p; }
+    if ((*p>='a' && *p<='z') || (*p>='A' && *p<='Z') || *p=='_') return false;
+    *length=(size_t)(p-s); return true;
+}
+static void coroutine(emitter *e, gnode_function_decl_t *f) {
+    FILE *output=e->out, *body=tmpfile();
+    if (!body) { ga_fail(e,(gnode_t *)f,"cannot stage coroutine"); return; }
+    e->out=body;
+    stmt(e,(gnode_t *)f->block);
+    fflush(body); long size=ftell(body); rewind(body);
+    char *code=size>=0?malloc((size_t)size+1):NULL;
+    if (!code || fread(code,1,(size_t)size,body)!=(size_t)size) ga_fail(e,(gnode_t *)f,"cannot read coroutine staging stream");
+    fclose(body); e->out=output;
+    if (e->failed) { free(code); return; }
+    code[size]=0;
+    unsigned locals=(unsigned)f->nlocals+(unsigned)gnode_array_size(f->params)+1;
+    unsigned slots=locals+e->temporary+1;
+    unsigned *arrays=calloc(e->temporary+1,sizeof(unsigned));
+    if (!arrays) { free(code); ga_fail(e,(gnode_t *)f,"cannot allocate coroutine layout"); return; }
+    for (const char *p=code; (p=strstr(p,"gravity_aot_value a")); ++p) {
+        unsigned id=0,count=0;
+        if (sscanf(p,"gravity_aot_value a%u[%u]",&id,&count)==2 && id<=e->temporary) { arrays[id]=slots; slots+=count; }
+    }
+    int fi=ga_declaration_index(e,(gnode_t *)f);
+    ga_put(e,"static void %s_resume_%d(gravity_aot_context *ctx, gravity_aot_task *task) {\n",e->prefix,fi);
+    ga_put(e,"gravity_aot_value result=gravity_aot_null();\nswitch (task->pc) {\ncase 0: break;\n");
+    for (unsigned i=1;i<=e->suspension;++i) ga_put(e,"case %u: goto ga_resume_%u;\n",i,i);
+    ga_put(e,"default: gravity_aot_error(ctx,GRAVITY_AOT_TYPE); goto ga_exit;\n}\n");
+    for (const char *p=code; *p;) {
+        if (!strncmp(p,"gravity_aot_value ",18) || !strncmp(p,"uint64_t state",14)) {
+            const char *value=p+(!strncmp(p,"gravity_aot_value ",18)?18:9);
+            size_t len=0; char kind=0; unsigned id=0;
+            if (frame_token(value,&len,&kind,&id)) {
+                p=value;
+                if (kind=='a') { const char *end=strchr(p,';'); if (end) p=end+1; }
+                continue;
+            }
+        }
+        if ((*p>='a' && *p<='z') || (*p>='A' && *p<='Z') || *p=='_') {
+            size_t len=0; char kind=0; unsigned id=0;
+            if (frame_token(p,&len,&kind,&id)) {
+                if (kind=='a') ga_put(e,"(&task->values[%u])",arrays[id]);
+                else if (kind=='s') ga_put(e,"task->cursors[%u]",id);
+                else ga_put(e,"task->values[%u]",kind=='v'?id:locals+id);
+                p+=len;
+            } else {
+                const char *start=p++;
+                while ((*p>='a' && *p<='z') || (*p>='A' && *p<='Z') || (*p>='0' && *p<='9') || *p=='_') ++p;
+                ga_put(e,"%.*s",(int)(p-start),start);
+            }
+        } else { ga_put(e,"%c",*p); ++p; }
+    }
+    ga_put(e,"goto ga_exit;\nga_exit: task->result=result; task->error=ctx->error; task->state=ctx->error?GA_TASK_FAILED:GA_TASK_COMPLETE;\nreturn;\n");
+    if (e->suspension) ga_put(e,"ga_suspend: if (ctx->error) { task->error=ctx->error; task->state=GA_TASK_FAILED; } else task->state=GA_TASK_PENDING;\n");
+    ga_put(e,"}\n");
+    ga_put(e,"static gravity_aot_value "); ga_function_name(e,f);
+    ga_put(e,"(gravity_aot_context *ctx,%sconst gravity_aot_value *args,uint32_t argc) {\n",e->owner?"gravity_aot_value receiver, ":"");
+    ga_put(e,"if (!ctx) return gravity_aot_null();\nif (argc!=%zu || (argc && !args)) { gravity_aot_error(ctx,GRAVITY_AOT_ARITY); return gravity_aot_null(); }\n",gnode_array_size(f->params)-1);
+    ga_put(e,"gravity_aot_value value=gravity_aot_task_new(ctx,%s_resume_%d,%u,%u);\nif (ctx->error) return gravity_aot_null();\ngravity_aot_task *task=value.task; (void)task;\n",e->prefix,fi,slots,e->temporary+1);
+    if (e->owner) ga_put(e,"task->values[0]=receiver;\nif (receiver.kind!=GRAVITY_AOT_OBJECT || !receiver.object || receiver.object->type!=&ga_%s_types[%d]) { gravity_aot_error(ctx,GRAVITY_AOT_TYPE); return gravity_aot_null(); }\n",e->prefix,ga_class_index(e,(gnode_t *)e->owner));
+    for (size_t p=1;p<gnode_array_size(f->params);++p) {
+        gnode_var_t *v=(gnode_var_t *)gnode_array_get(f->params,p);
+        ga_put(e,"task->values[%u]=gravity_aot_copy(ctx,args[%zu]);\n",v->index,p-1);
+        if (v->annotation_type) { ga_put(e,"if (!gravity_aot_matches(ctx,task->values[%u],",v->index); ga_string(e,v->annotation_type,strlen(v->annotation_type)); ga_put(e,")) return gravity_aot_null();\n"); }
+    }
+    ga_put(e,"return ctx->error?gravity_aot_null():value;\n}\n");
+    free(arrays); free(code);
+}
+
 static bool generate(emitter *e, gnode_t *ast) {
     if (!identifier(e->prefix)) return ga_fail(e,NULL,"module prefix must be an ASCII identifier starting with a letter");
     if (!collect(e,ast)) return false;
-    ga_put(e,"/* Generated by Gravity AOT; standalone ABI 2. */\n#include \"gravity_aot_runtime.h\"\n");
+    ga_put(e,"/* Generated by Gravity AOT; standalone ABI 3. */\n#include \"gravity_aot_runtime.h\"\n");
     if (gnode_array_size(e->classes)) ga_put(e,"static const gravity_aot_class ga_%s_types[%zu];\n",e->prefix,gnode_array_size(e->classes));
     for (size_t i=0; i<gnode_array_size(e->functions); ++i) {
         gnode_function_decl_t *f=(gnode_function_decl_t *)gnode_array_get(e->functions,i);
         ga_put(e,"static gravity_aot_value "); ga_function_name(e,f);
         ga_put(e,"(gravity_aot_context *, %sconst gravity_aot_value *, uint32_t);\n",ga_function_owner(e,f)?"gravity_aot_value, ":"");
     }
+    for (size_t i=0;i<gnode_array_size(e->classes);++i) {
+        e->owner=(gnode_class_decl_t *)gnode_array_get(e->classes,i);
+        e->function=NULL;
+        for (size_t j=0;j<gnode_array_size(e->owner->decls);++j) {
+            gnode_t *member=gnode_array_get(e->owner->decls,j);
+            if (member->tag!=NODE_VARIABLE_DECL) continue;
+            gnode_r *fields=((gnode_variable_decl_t *)member)->decls;
+            for (size_t k=0;k<gnode_array_size(fields);++k) {
+                gnode_var_t *v=(gnode_var_t *)gnode_array_get(fields,k);
+                if (ga_constant_default(v->expr)) continue;
+                e->temporary=0;
+                ga_put(e,"static gravity_aot_value %s_field_%d(gravity_aot_context *ctx,gravity_aot_value v0) {\n(void)v0;\ngravity_aot_value result=gravity_aot_null();\n",e->prefix,ga_declaration_index(e,(gnode_t *)v));
+                unsigned value=expr(e,v->expr);
+                ga_put(e,"result=t%u; goto ga_exit;\nga_exit: return ctx->error?gravity_aot_null():result;\n}\n",value);
+            }
+        }
+    }
     for (size_t i=0; i<gnode_array_size(e->functions); ++i) {
         gnode_function_decl_t *f=(gnode_function_decl_t *)gnode_array_get(e->functions,i);
-        e->function=f; e->owner=ga_function_owner(e,f); e->temporary=0;
+        e->function=f; e->owner=ga_function_owner(e,f); e->temporary=0; e->suspension=0;
+        if (f->is_async) { coroutine(e,f); continue; }
         size_t arity=gnode_array_size(f->params)-1;
         ga_put(e,"static gravity_aot_value "); ga_function_name(e,f);
         ga_put(e,"(gravity_aot_context *ctx, %sconst gravity_aot_value *args, uint32_t argc) {\n",e->owner?"gravity_aot_value receiver, ":"");

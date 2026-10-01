@@ -427,7 +427,7 @@ static int gravity_emit_c(int argc, const char *argv[]) {
     FILE *staged = tmpfile();
     bool ok = compiler && staged;
     if (!ok) fprintf(stderr, "Cannot initialize AOT compiler or staging stream\n");
-    if (ok) ok = gravity_compiler_run(compiler, source, size, 0, true, true) != NULL;
+    if (ok) ok = gravity_compiler_prepare_native(compiler, source, size, 0);
     if (ok) ok = gravity_compiler_emit_c(compiler, staged, prefix, &delegate);
     if (ok) {
         if (fflush(staged) || fseek(staged, 0, SEEK_SET)) ok = false;

@@ -85,6 +85,12 @@ static gnode_class_decl_t *field_owner(emitter *e, gnode_t *v) {
     }
     return NULL;
 }
+bool ga_constant_default(gnode_t *n) {
+    if (!n || n->tag==NODE_KEYWORD_EXPR) return true;
+    if (n->tag==NODE_LITERAL_EXPR) return ((gnode_literal_expr_t *)n)->type!=LITERAL_STRING_INTERPOLATED;
+    if (n->tag==NODE_UNARY_EXPR) return ga_constant_default(((gnode_unary_expr_t *)n)->expr);
+    return false;
+}
 static bool default_value(emitter *e, gnode_t *n, bool negative) {
     if (!n || (n->tag==NODE_KEYWORD_EXPR && n->token.type==TOK_KEY_NULL)) { ga_put(e,"{0}"); return true; }
     if (n->tag==NODE_UNARY_EXPR) {
@@ -144,7 +150,11 @@ void ga_metadata(emitter *e) {
                 for (size_t k=0; k<gnode_array_size(d->decls); ++k) {
                     gnode_var_t *v=(gnode_var_t *)gnode_array_get(d->decls,k);
                     ga_put(e,"{&ga_%s_declarations[%d],",e->prefix,ga_declaration_index(e,(gnode_t *)v));
-                    default_value(e,v->expr,false); ga_put(e,",%u},\n",d->type==TOK_KEY_CONST);
+                    if (ga_constant_default(v->expr)) default_value(e,v->expr,false); else ga_put(e,"{0}");
+                    ga_put(e,",%u,",d->type==TOK_KEY_CONST);
+                    if (ga_constant_default(v->expr)) ga_put(e,"NULL");
+                    else ga_put(e,"%s_field_%d",e->prefix,ga_declaration_index(e,(gnode_t *)v));
+                    ga_put(e,"},\n");
                 }
             }
             ga_put(e,"};\n");

@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix="gravity-aot-tests-") as tmp:
     run([str(host)])
     cases = [
         "class Player: Object {}",
-        "class Player { var x = [1,2]; }",
+        'class Player { var x = ["a":1]; }',
         'func main() { return ["key":1]; }',
         "func main() { return { return 1; }; }",
         "var global = 1; func main() { return global; }",
@@ -51,7 +51,6 @@ with tempfile.TemporaryDirectory(prefix="gravity-aot-tests-") as tmp:
         "class Player { static func main() { return 1; } }",
         "func main() { var x = 1; func nested() { return x; } return nested(); }",
         "func main() { @export var x = 1; return x; }",
-        "async func main() { return 1; }",
         "func main() { return missing; }",
     ]
     for index, text in enumerate(cases):
@@ -126,4 +125,4 @@ int main(void) {
     failed = subprocess.run([sys.executable, str(root / "tools/aot_build.py"), str(source), "--module", "testmod",
                              "--output", str(library), "--sysroot", str(out / "missing-sdk")], capture_output=True)
     assert failed.returncode != 0 and library.read_bytes() == before
-print("AOT: native archive, VM comparison, sanitizers, ABI/errors/limits, 45 scalar comparisons and annotated native objects/host callbacks and 13 rejection cases passed")
+print("AOT: native archive, VM comparison, sanitizers, ABI/errors/limits, 45 scalar comparisons and annotated native objects/host callbacks and 12 rejection cases passed")

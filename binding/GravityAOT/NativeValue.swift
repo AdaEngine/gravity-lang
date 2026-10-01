@@ -8,6 +8,10 @@ public protocol NativeHostObject: AnyObject {
     func call(_ method: String, arguments: [NativeValue]) throws -> NativeValue?
     func next(state: inout UInt64) throws -> NativeValue?
 }
+/// Operations may opt in only when they contain no callback-scoped capabilities.
+/// Their implementations must synchronize all cross-thread state.
+public protocol NativeSuspensionSafeHostObject: NativeHostObject, Sendable {}
+
 extension NativeHostObject {
     public func read(_: String) throws -> NativeValue? { nil }
     public func write(_: String, value _: NativeValue) throws -> Bool { false }
@@ -17,7 +21,7 @@ extension NativeHostObject {
 
 public indirect enum NativeValue {
     case null, boolean(Bool), integer(Int64), double(Double), string(String)
-    case object(NativeInstance), host(any NativeHostObject), list([NativeValue])
+    case object(NativeInstance), host(any NativeHostObject), list([NativeValue]), task(NativeTask)
 
     public init(_ literal: NativeLiteral) throws {
         switch literal {
@@ -39,7 +43,7 @@ public indirect enum NativeValue {
         case let .string(v): .string(v)
         case let .list(v):
             if v.allSatisfy({ $0.literal != nil }) { .list(v.compactMap(\.literal)) } else { nil }
-        case .object, .host: nil
+        case .object, .host, .task: nil
         }
     }
 }
@@ -53,5 +57,19 @@ public final class NativeInstance: @unchecked Sendable {
 
     init(owner: NativeModule, raw: gravity_aot_value, typeName: String) {
         self.owner = owner; self.raw = raw; self.typeName = typeName
+        owner.registerRoot(self)
     }
+}
+
+/// A handle to an arena-owned native coroutine. NativeModule serializes its
+/// state and code; callers never access the suspended frame directly.
+public final class NativeTask: @unchecked Sendable {
+    let owner: NativeModule
+    let raw: gravity_aot_value
+    init(owner: NativeModule, raw: gravity_aot_value) { self.owner = owner; self.raw = raw; owner.registerRoot(self) }
+    public var identifier: UInt { UInt(bitPattern: raw.task) }
+}
+
+public enum NativeTaskPoll {
+    case pending, completed(NativeValue), cancelled
 }
