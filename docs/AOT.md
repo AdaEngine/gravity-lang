@@ -69,9 +69,9 @@ never fall back to VM execution.
 
 ## Declarations, attributes and native objects
 
-The experimental standalone ABI is now **version 2**. Rebuild both libraries and
-hosts generated with ABI 1. Values represent Int, Bool, Float, null, literal
-strings, native objects, lists, ranges and borrowed host handles. Native methods
+The experimental standalone ABI is now **version 3**. Rebuild both libraries and
+hosts generated with ABI 1 or 2. Values represent Int, Bool, Float, null, literal
+strings, native objects, lists, ranges, native tasks and borrowed/durable host handles. Native methods
 and metadata live in the same archive; no Gravity VM is linked for execution.
 
 `module->declarations` records classes/structs, fields, methods and functions,
@@ -139,12 +139,54 @@ recursion depth. Fuel is consumed on function entry, each loop condition and
 object construction; reset after errors. Native calls unwind their depth on error.
 
 Closures, inheritance, nested/static classes, static/computed properties, maps,
-string interpolation/concatenation, named/default arguments, `repeat`, async,
+string interpolation/concatenation, named/default arguments, `repeat`,
 global mutable variables and bodyless function declarations remain unsupported.
 The host bridge exposes external globals/functions through declared extern
 bindings. Unsupported source constructs produce compile errors; missing bridge
 operations and invalid runtime values produce context errors. Compilation and
 execution never silently fall back to the VM.
+
+## Native async and await
+
+Use `gravity_compiler_prepare_native` before `gravity_compiler_emit_c` in C hosts.
+The CLI and `aot_build.py` already do this. It preserves async AST bodies rather
+than lowering them into VM Fiber wrappers; semantic checking remains shared.
+
+An async call creates a suspended coroutine and returns a native
+`GRAVITY_AOT_TASK`. Generated resume functions use a program counter and an
+arena-owned frame for locals, expression temporaries, argument arrays and loop
+cursors. `gravity_aot_task_poll` continues from that point without replaying side
+effects. Awaiting a child task propagates completion, errors and cancellation.
+Promise tasks created with a null resume callback support `complete(value)`,
+`isComplete()`, `status()`, `result()` and `cancel()`. Nonconstant field defaults,
+including promise construction, run through generated initializer callbacks;
+struct copies do not rerun initializers.
+
+Awaitable host operations use `GRAVITY_AOT_DURABLE_HOST` and expose `isDone()`,
+`result()` and `cancel()`. Only detached, synchronized operations may be durable.
+Ordinary host handles retain the callback generation and fail on later access.
+Explicit `@nonsendable` objects cannot cross suspension, including nested values;
+the frame check is conservative and can also reject dead nonsendable temporaries.
+Polls consume the same fuel/depth budget as synchronous native calls. Arena
+memory remains bounded and caller-owned; native tasks do not introduce a C-object GC.
+The Swift facade traces detached host handles from live instances/tasks and their
+native references, periodically releasing unreachable timer/operation adapters.
+Durable handle generations prevent a reused Swift address from reviving an old
+reference. Completed/cancelled task frames release their suspended references.
+
+The Swift facade adds `NativeValue.task`, `NativeTask`, `NativeModule.poll/cancel`,
+`makePromise` and `NativeSuspensionSafeHostObject`. The facade starts scheduled tasks after synchronous callback statements finish,
+while the callback scope is still valid. Hosts must arrange subsequent polling
+inside valid owner access and cancel tasks when that owner goes away. AdaEngine
+provides this scheduling plus Tasks/Time/async asset adapters for Editor exports.
+
+```sh
+python3 test/aot/async.py
+```
+
+This executes the same coroutine proof with ASan/UBSan and freestanding WASM:
+nested await, loops and expression state, immediate completion, no replay, promises,
+cancellation, stale capabilities, errors and fuel. No VM runtime is linked.
 
 ## Engine-style proof fixture
 
@@ -159,8 +201,7 @@ clang -std=c11 -I/tmp/native-attributes test/aot/attributes_host.c \
 The fixture exercises component/resource/network/tool metadata, real native
 class/struct semantics, query filters and position updates through a C host,
 scriptable lifecycle, an RPC-annotated method, UTF-8 field values and stale-borrow
-errors. This proves the Gravity backend and generic host ABI. The AdaEngine
-adapter/export path has not yet been connected to this ABI.
+errors. This proves the Gravity backend and generic host ABI. AdaEngine consumes this ABI through its GravityAOT facade and native runtime adapters.
 
 ## Verification
 
@@ -189,5 +230,37 @@ The AdaEngine adapter can be enabled during development using
 `ADAENGINE_GRAVITY_PACKAGE_PATH` pointing at this checkout. It registers native
 systems, component/resource schemas and scriptable factories in existing engine
 infrastructure. Its native integration tests run actual ECS queries and lifecycle
-callbacks against statically linked generated code. World/input/assets/network/UI
-adapters and an Editor native export flow remain separate work.
+callbacks against statically linked generated code. World commands, input, assets and networking now have native adapters in AdaEngine. Standalone macOS AdaEditor can generate a native game package and export its macOS app or game-specific WebAssembly bundle; AdaScript UI views remain unavailable.
+
+## Project sources and export formats
+
+The build tool accepts multiple ordered sources as one module and writes
+`<module>.sources.json` with their merged-source line ranges. It accepts `.c`
+output for host build systems and `.wasm` for standalone wasm32 C-ABI hosts:
+
+```sh
+python3 tools/aot_build.py Components.ada Gameplay.ada --module gameplay \
+    --output /tmp/gameplay/gameplay.c
+python3 tools/aot_build.py test/aot/scalars.gravity --module testmod \
+    --cc /path/to/wasm-capable/clang --output /tmp/gameplay/testmod.wasm
+```
+
+The standalone WASM exports linear memory, its indirect function table and the
+module accessor. It imports only the target math operation `env.remainder` when
+required by generated numeric operations. Hosts must provide IEEE remainder
+semantics. It is an ABI module, not a complete browser game or an AdaEngine player.
+AdaEditor's Web export compiles the same generated C into its game-specific
+Swift/WASI executable and uses the engine's browser bundler.
+
+`NativeModule.invoke` accepts callback-scoped extern globals. A host callback can
+read a native command argument's fields under the same module lock without a
+nested invocation. Borrowed globals are cleared after the invocation.
+
+```sh
+WASM_CC=/path/to/wasm-capable/clang python3 test/aot/export_formats.py
+```
+
+This checks ordered sources, C/archive formats, failure preservation, actual
+WASM scalar execution and the fuel limit. On current macOS, use a recent Clang
+sanitizer runtime for `run_all.py`; older Apple ASan runtimes can deadlock during
+initialization before generated code runs.

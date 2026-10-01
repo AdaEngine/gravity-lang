@@ -37,13 +37,29 @@ static inline gravity_aot_value gravity_aot_new(gravity_aot_context *c, const gr
     if (!o) return v;
     o->type = type; o->fields = (gravity_aot_value *)(o+1);
     for (uint32_t i=0; i<type->field_count; ++i) o->fields[i] = gravity_aot_copy(c, type->fields[i].default_value);
-    v.object = o; v.kind = GRAVITY_AOT_OBJECT; return v;
+    v.object = o; v.kind = GRAVITY_AOT_OBJECT;
+    for (uint32_t i=0;i<type->field_count;++i) if (type->fields[i].initialize) {
+        if (c->depth>=c->max_depth) { gravity_aot_error(c,GRAVITY_AOT_LIMIT); return gravity_aot_null(); }
+        ++c->depth;
+        o->fields[i]=type->fields[i].initialize(c,v);
+        --c->depth;
+        if (c->error) return gravity_aot_null();
+    }
+    return v;
 }
 static inline gravity_aot_value gravity_aot_copy(gravity_aot_context *c, gravity_aot_value v) {
     if (!gravity_aot_valid(c, v)) return gravity_aot_null();
     if (v.kind == GRAVITY_AOT_OBJECT && v.object && v.object->type->is_struct) {
-        gravity_aot_value copy = gravity_aot_new(c, v.object->type);
-        if (c->error) return gravity_aot_null();
+        const gravity_aot_class *type=v.object->type;
+        gravity_aot_value copy=gravity_aot_null();
+        if (!gravity_aot_tick(c)) return copy;
+        if ((size_t)type->field_count>(SIZE_MAX-sizeof(gravity_aot_object))/sizeof(gravity_aot_value)) {
+            gravity_aot_error(c,GRAVITY_AOT_MEMORY); return copy;
+        }
+        gravity_aot_object *object=(gravity_aot_object *)gravity_aot_allocate(c,sizeof(*object)+type->field_count*sizeof(gravity_aot_value));
+        if (!object) return copy;
+        object->type=type; object->fields=(gravity_aot_value *)(object+1);
+        copy.kind=GRAVITY_AOT_OBJECT; copy.object=object;
         for (uint32_t i=0; i<v.object->type->field_count; ++i) copy.object->fields[i] = gravity_aot_copy(c, v.object->fields[i]);
         return copy;
     }
@@ -75,7 +91,7 @@ static inline gravity_aot_value gravity_aot_get(gravity_aot_context *c, gravity_
     } else if (receiver.kind == GRAVITY_AOT_LIST && !gravity_aot_text_compare(name,"count")) return gravity_aot_int(receiver.list->count);
     else if (receiver.kind == GRAVITY_AOT_STRING && !gravity_aot_text_compare(name,"count")) {
         gravity_aot_error(c, GRAVITY_AOT_TYPE); /* byte length is not Unicode character count */
-    } else if ((receiver.kind == GRAVITY_AOT_HOST || receiver.kind == GRAVITY_AOT_NULL) && c->host && c->host->get) {
+    } else if ((receiver.kind == GRAVITY_AOT_HOST || receiver.kind == GRAVITY_AOT_DURABLE_HOST || receiver.kind == GRAVITY_AOT_NULL) && c->host && c->host->get) {
         if (!c->host->get(c->host_data,receiver,name,&result)) gravity_aot_error(c, GRAVITY_AOT_HOST_ERROR);
         gravity_aot_valid(c,result);
     } else gravity_aot_error(c, GRAVITY_AOT_FIELD);
@@ -90,7 +106,7 @@ static inline int gravity_aot_set(gravity_aot_context *c, gravity_aot_value rece
             receiver.object->fields[i] = gravity_aot_copy(c,value); return !c->error;
         }
         gravity_aot_error(c, GRAVITY_AOT_FIELD);
-    } else if (receiver.kind == GRAVITY_AOT_HOST && c->host && c->host->set) {
+    } else if ((receiver.kind == GRAVITY_AOT_HOST || receiver.kind == GRAVITY_AOT_DURABLE_HOST) && c->host && c->host->set) {
         if (!c->host->set(c->host_data,receiver,name,value)) gravity_aot_error(c, GRAVITY_AOT_HOST_ERROR);
     } else gravity_aot_error(c, GRAVITY_AOT_FIELD);
     return !c->error;
@@ -101,12 +117,13 @@ static inline gravity_aot_value gravity_aot_call(gravity_aot_context *c, gravity
     if (!gravity_aot_valid(c,receiver)) return result;
     if (count && !args) { gravity_aot_error(c,GRAVITY_AOT_ARITY); return result; }
     for (uint32_t i=0; i<count; ++i) if (!gravity_aot_valid(c,args[i])) return result;
+    if (receiver.kind == GRAVITY_AOT_TASK) return gravity_aot_task_call(c,receiver,name,args,count);
     if (receiver.kind == GRAVITY_AOT_OBJECT && receiver.object) {
         const gravity_aot_class *t = receiver.object->type;
         for (uint32_t i=0; i<t->method_count; ++i) if (!gravity_aot_text_compare(name,t->methods[i].name))
             return t->methods[i].call(c,receiver,args,count);
         gravity_aot_error(c, GRAVITY_AOT_METHOD);
-    } else if ((receiver.kind == GRAVITY_AOT_HOST || receiver.kind == GRAVITY_AOT_NULL) && c->host && c->host->call) {
+    } else if ((receiver.kind == GRAVITY_AOT_HOST || receiver.kind == GRAVITY_AOT_DURABLE_HOST || receiver.kind == GRAVITY_AOT_NULL) && c->host && c->host->call) {
         if (!c->host->call(c->host_data,receiver,name,args,count,&result)) gravity_aot_error(c, GRAVITY_AOT_HOST_ERROR);
         gravity_aot_valid(c,result);
     } else gravity_aot_error(c, GRAVITY_AOT_HOST_ERROR);

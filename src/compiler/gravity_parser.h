@@ -33,6 +33,7 @@ typedef struct gravity_parser_t    gravity_parser_t;
 
 // public functions
 gravity_parser_t   *gravity_parser_create (const char *source, size_t len, uint32_t fileid, bool is_static);
+void                gravity_parser_set_native(gravity_parser_t *parser);
 void                gravity_parser_free (gravity_parser_t *parser);
 gnode_t            *gravity_parser_run (gravity_parser_t *parser, gravity_delegate_t *delegate);
 

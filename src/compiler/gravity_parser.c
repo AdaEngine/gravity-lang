@@ -28,6 +28,7 @@ struct gravity_parser_t {
     lexer_r                             *lexer;             // stack of lexers (stack used in #include statements)
     gnode_r                             *declarations;      // used to keep track of nodes hierarchy
     gnode_r                             *statements;        // used to build AST
+    bool                                native_async;
     gnode_t                             *pending_async;     // generated body declaration after its public wrapper
     gravity_delegate_t                  *delegate;          // compiler delegate
     uint16_r                            vdecl;              // to keep track of func expression in variable declaration nondes
@@ -446,7 +447,7 @@ static gnode_t *parse_function (gravity_parser_t *parser, bool is_declaration, g
     func->has_defaults = has_default_values;
     func->params = params;
     func->block = compound;
-    if (is_async) return lower_async_function(parser, func, IS_CLASS_ENCLOSED());
+    if (is_async && !parser->native_async) return lower_async_function(parser, func, IS_CLASS_ENCLOSED());
     return (gnode_t *)func;
 }
 
@@ -2945,12 +2946,19 @@ static void parser_register_optional_classes (gravity_parser_t *parser) {
     gnode_array_push(parser->statements, (gnode_t *)node);
 }
 
+void gravity_parser_set_native(gravity_parser_t *parser) { parser->native_async = true; }
+
 static uint32_t parser_run (gravity_parser_t *parser) {
     DEBUG_PARSER("=== BEGIN PARSING ===");
 
     // register core and optional classes as extern globals
     parser_register_core_classes(parser);
     parser_register_optional_classes(parser);
+    if (parser->native_async) {
+        gnode_r *decls = gnode_array_create();
+        gnode_array_push(decls, gnode_variable_create(NO_TOKEN, string_dup("__adaAwait"), NULL, NULL, NULL, NULL));
+        gnode_array_push(parser->statements, gnode_variable_decl_create(NO_TOKEN, TOK_KEY_VAR, 0, TOK_KEY_EXTERN, decls, NULL));
+    }
 
     nanotime_t t1 = nanotime();
     do {

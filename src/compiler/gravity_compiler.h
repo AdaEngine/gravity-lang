@@ -51,6 +51,9 @@ GRAVITY_API bool gravity_annotation_value_bool(const gravity_annotation_value_t 
 GRAVITY_API uint32_t gravity_annotation_value_count(const gravity_annotation_value_t *value);
 GRAVITY_API const gravity_annotation_value_t *gravity_annotation_value_at(const gravity_annotation_value_t *value, uint32_t index);
 
+/* Parse and resolve a native AST without generating VM bytecode or Fiber wrappers. */
+GRAVITY_API bool gravity_compiler_prepare_native(gravity_compiler_t *, const char *, size_t, uint32_t);
+
 #ifdef __cplusplus
 }
 #endif

@@ -27,13 +27,13 @@ static inline int gravity_aot_finite(double value) {
     return (bits & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000);
 }
 typedef char gravity_aot_double_must_be_64_bits[sizeof(double)==sizeof(uint64_t)?1:-1];
-#define GRAVITY_AOT_ABI_VERSION 2u
+#define GRAVITY_AOT_ABI_VERSION 3u
 
 enum { GRAVITY_AOT_NULL, GRAVITY_AOT_INT, GRAVITY_AOT_BOOL, GRAVITY_AOT_FLOAT,
-       GRAVITY_AOT_STRING, GRAVITY_AOT_OBJECT, GRAVITY_AOT_HOST, GRAVITY_AOT_LIST, GRAVITY_AOT_RANGE };
+       GRAVITY_AOT_STRING, GRAVITY_AOT_OBJECT, GRAVITY_AOT_HOST, GRAVITY_AOT_LIST, GRAVITY_AOT_RANGE, GRAVITY_AOT_TASK, GRAVITY_AOT_DURABLE_HOST };
 enum { GRAVITY_AOT_OK, GRAVITY_AOT_BAD_ABI, GRAVITY_AOT_ARITY, GRAVITY_AOT_TYPE,
        GRAVITY_AOT_DIV_ZERO, GRAVITY_AOT_LIMIT, GRAVITY_AOT_MEMORY, GRAVITY_AOT_FIELD,
-       GRAVITY_AOT_METHOD, GRAVITY_AOT_HOST_ERROR, GRAVITY_AOT_STALE_HANDLE };
+       GRAVITY_AOT_METHOD, GRAVITY_AOT_HOST_ERROR, GRAVITY_AOT_STALE_HANDLE, GRAVITY_AOT_CANCELLED };
 enum { GA_ADD, GA_SUB, GA_MUL, GA_DIV, GA_REM, GA_LT, GA_LE, GA_GT, GA_GE,
        GA_EQ, GA_NE, GA_AND, GA_OR, GA_NEG, GA_NOT };
 enum { GRAVITY_AOT_DECL_FUNCTION, GRAVITY_AOT_DECL_CLASS, GRAVITY_AOT_DECL_STRUCT,
@@ -46,9 +46,10 @@ typedef struct gravity_aot_context gravity_aot_context;
 typedef struct gravity_aot_class gravity_aot_class;
 typedef struct gravity_aot_list gravity_aot_list;
 typedef struct gravity_aot_range gravity_aot_range;
+typedef struct gravity_aot_task gravity_aot_task;
 typedef struct {
     union { int64_t integer; double floating; const char *string; gravity_aot_object *object;
-            void *handle; gravity_aot_list *list; gravity_aot_range *range; };
+            void *handle; gravity_aot_list *list; gravity_aot_range *range; gravity_aot_task *task; };
     uint32_t kind, length; /* string length, or host generation for a borrowed handle */
 } gravity_aot_value;
 typedef struct gravity_aot_attribute_value {
@@ -84,6 +85,7 @@ typedef struct {
     const gravity_aot_declaration *declaration;
     gravity_aot_value default_value;
     uint32_t readonly;
+    gravity_aot_value (*initialize)(gravity_aot_context *, gravity_aot_value);
 } gravity_aot_field;
 typedef struct {
     const char *name;
@@ -148,7 +150,7 @@ static inline gravity_aot_value gravity_aot_host_ref(gravity_aot_context *c, voi
 }
 static inline void gravity_aot_error(gravity_aot_context *c, uint32_t error) { if (!c->error) c->error = error; }
 static inline int gravity_aot_valid(gravity_aot_context *c, gravity_aot_value v) {
-    if (v.kind > GRAVITY_AOT_RANGE) gravity_aot_error(c, GRAVITY_AOT_TYPE);
+    if (v.kind > GRAVITY_AOT_DURABLE_HOST) gravity_aot_error(c, GRAVITY_AOT_TYPE);
     if (v.kind == GRAVITY_AOT_HOST && v.length != c->host_generation) gravity_aot_error(c, GRAVITY_AOT_STALE_HANDLE);
     return !c->error;
 }
@@ -241,5 +243,10 @@ static inline gravity_aot_value gravity_aot_unary(gravity_aot_context *c, int op
     if (v.kind > GRAVITY_AOT_BOOL) { gravity_aot_error(c, GRAVITY_AOT_TYPE); return gravity_aot_null(); }
     return gravity_aot_int((int64_t)(UINT64_C(0)-(uint64_t)v.integer));
 }
+static inline void *gravity_aot_allocate(gravity_aot_context *,size_t);
+static inline gravity_aot_value gravity_aot_copy(gravity_aot_context *,gravity_aot_value);
+static inline gravity_aot_value gravity_aot_call(gravity_aot_context *,gravity_aot_value,const char *,const gravity_aot_value *,uint32_t);
+static inline gravity_aot_value gravity_aot_task_call(gravity_aot_context *,gravity_aot_value,const char *,const gravity_aot_value *,uint32_t);
 #include "gravity_aot_objects.h"
+#include "gravity_aot_tasks.h"
 #endif
